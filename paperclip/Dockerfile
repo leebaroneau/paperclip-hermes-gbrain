@@ -70,6 +70,11 @@ COPY paperclip/patch-hermes-adapter-env.mjs /opt/paperclip/patch-hermes-adapter-
 COPY paperclip/patch-paperclip-company-prefix.mjs /opt/paperclip/patch-paperclip-company-prefix.mjs
 COPY paperclip/patch-paperclip-hermes-defaults.mjs /opt/paperclip/patch-paperclip-hermes-defaults.mjs
 COPY paperclip/profile-sync.mjs /opt/paperclip/profile-sync.mjs
+COPY paperclip/mcp-paperclip /opt/paperclip/mcp-paperclip
+RUN cd /opt/paperclip/mcp-paperclip \
+  && npm install --omit=dev --no-audit --no-fund --silent \
+  && chmod +x /opt/paperclip/mcp-paperclip/server.mjs
+
 RUN mkdir -p /data /opt/work \
   && rm -rf /opt/hermes-bootstrap /root/.hermes /data/* /data/.[!.]* /data/..?* /tmp/* \
   && rm -f /usr/local/bin/bun \

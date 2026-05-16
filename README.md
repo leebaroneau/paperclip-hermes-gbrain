@@ -91,6 +91,51 @@ Profile sync also mirrors the current Paperclip companies and agents into:
 Use `ORG_MIRROR_ROOT` only if you need to place those files somewhere other than
 `/data/agent-stack`.
 
+## Paperclip MCP Server
+
+The blank Hermes config is intentionally empty, with one exception: a Paperclip MCP server is wired in by default so Hermes agents in any new setup can file and track work in Paperclip through typed tool calls instead of constructing shell `curl` commands.
+
+The server lives at `paperclip/mcp-paperclip/` and is baked into the image at `/opt/paperclip/mcp-paperclip/`. It is registered in `hermes-runtime/templates/config.yaml` under `mcp_servers.paperclip`, exposing eight tools to every Hermes profile:
+
+```text
+paperclip_list_companies
+paperclip_create_issue
+paperclip_list_issues
+paperclip_get_issue
+paperclip_update_issue
+paperclip_comment_on_issue
+paperclip_list_agents
+paperclip_list_projects
+```
+
+Issues created this way show up in Paperclip's task board exactly like any other.
+
+The server reads its credentials from container env in this order:
+
+```text
+PAPERCLIP_API_KEY              (preferred)
+PAPERCLIP_PROFILE_SYNC_API_KEY (fallback)
+```
+
+If both are blank the server still starts but every tool call fails with an auth error. Mint a board key once Paperclip is reachable:
+
+```bash
+docker compose --env-file .env exec paperclip paperclipai auth login --api-base http://127.0.0.1:3100
+```
+
+That command prints an approval URL — open it in a browser, sign in, click approve. The CLI then stores a `pcp_board_*` token; copy it into Coolify env as `PAPERCLIP_API_KEY` and redeploy.
+
+Optional convenience env: set `PAPERCLIP_DEFAULT_COMPANY_ID=<uuid>` so single-company setups don't need to pass `companyId` on every tool call.
+
+Health check from inside the container:
+
+```bash
+docker compose --env-file .env exec paperclip node /opt/paperclip/mcp-paperclip/server.mjs \
+  <<< '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'
+```
+
+A healthy server replies with `serverInfo: {"name":"paperclip","version":"0.1.0"}`.
+
 ## Blank Image Audit
 
 After a local build, audit the image before publishing or reusing it:

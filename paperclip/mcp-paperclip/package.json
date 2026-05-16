@@ -1,0 +1,17 @@
+{
+  "name": "agent-stack-mcp-paperclip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server that exposes Paperclip's REST API to Hermes-side agents",
+  "type": "module",
+  "main": "server.mjs",
+  "bin": {
+    "mcp-paperclip": "server.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  }
+}

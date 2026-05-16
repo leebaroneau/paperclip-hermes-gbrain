@@ -1,1 +1,10 @@
-{}
+mcp_servers:
+  paperclip:
+    command: "node"
+    args: ["/opt/paperclip/mcp-paperclip/server.mjs"]
+    enabled: true
+    timeout: 60
+    connect_timeout: 30
+    tools:
+      resources: false
+      prompts: false
