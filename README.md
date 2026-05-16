@@ -41,7 +41,23 @@ Stop it with:
 ```
 
 4. Paste the generated values into Coolify and replace the example domain with the real client domain.
-5. Deploy.
+5. Enable role profile sync so Paperclip roles get their own Hermes profile and GBrain home:
+
+```env
+PROFILE_SYNC_ENABLED=1
+PROFILE_SYNC_INTERVAL_SEC=60
+PROFILE_SYNC_DELETE_MODE=archive
+PAPERCLIP_PROFILE_SYNC_API_KEY=<paperclip-api-key>
+```
+
+Leave these blank unless you want to sync only specific companies:
+
+```env
+PAPERCLIP_COMPANY_IDS=
+PAPERCLIP_COMPANIES=
+```
+
+6. Deploy.
 
 For Coolify, make sure these values are not left as examples:
 
@@ -49,6 +65,14 @@ For Coolify, make sure these values are not left as examples:
 - `PAPERCLIP_ALLOWED_HOSTNAMES`
 - `PAPERCLIP_HOSTNAME`
 - `HERMES_HOSTNAME`
+- `PAPERCLIP_PROFILE_SYNC_API_KEY`
+
+If `PROFILE_SYNC_ENABLED` is not `1`, roles will not be automatically patched. When sync is enabled, each role is patched to:
+
+```text
+/data/hermes/profiles/<company-role>
+/data/gbrain/<company-role>
+```
 
 ## Blank Image Audit
 
