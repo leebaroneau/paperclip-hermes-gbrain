@@ -25,6 +25,17 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Free disk space on runner
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
       - uses: actions/checkout@v4
 
       - id: paperclip_version
@@ -64,3 +75,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+
+      - name: Trigger ALX Coolify deploy
+        if: success() && vars.COOLIFY_ALX_BASE_URL != '' && vars.COOLIFY_ALX_APP_UUID != ''
+        run: |
+          curl -sf -X GET \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_ALX_TOKEN }}" \
+            "${{ vars.COOLIFY_ALX_BASE_URL }}/api/v1/deploy?uuid=${{ vars.COOLIFY_ALX_APP_UUID }}&force=false" \
+            || echo "ALX deploy trigger failed (non-fatal)"
+
+      - name: Trigger leebarone Coolify deploy
+        if: success() && vars.COOLIFY_LEEBARONE_BASE_URL != '' && vars.COOLIFY_LEEBARONE_APP_UUID != ''
+        run: |
+          curl -sf -X GET \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_LEEBARONE_TOKEN }}" \
+            "${{ vars.COOLIFY_LEEBARONE_BASE_URL }}/api/v1/deploy?uuid=${{ vars.COOLIFY_LEEBARONE_APP_UUID }}&force=false" \
+            || echo "leebarone deploy trigger failed (non-fatal)"

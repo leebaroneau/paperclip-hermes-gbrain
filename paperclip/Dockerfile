@@ -2,8 +2,8 @@
 FROM node:22-bookworm-slim
 
 ARG PAPERCLIP_VERSION=2026.513.0
-ARG HERMES_AGENT_REF=main
-ARG GBRAIN_REF=master
+ARG HERMES_AGENT_REF=3034eee38ec516109566c00975be4d0276747c34
+ARG GBRAIN_REF=3933eb6a7915cb5495b8057b75567e2b1588b5ac
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PAPERCLIP_HOME=/data
@@ -96,5 +96,10 @@ RUN mkdir -p /data /opt/work \
   && chmod +x /opt/paperclip/entrypoint.sh /opt/paperclip/hermes-entrypoint.sh
 
 EXPOSE 3100 9119
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -fs http://localhost:3100/api/health >/dev/null 2>&1 \
+      || curl -fs http://localhost:9119/ >/dev/null 2>&1 \
+      || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/paperclip/entrypoint.sh"]

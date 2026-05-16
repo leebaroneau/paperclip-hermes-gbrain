@@ -371,6 +371,66 @@ The Dockerfile deliberately cleans `/data` during build. Runtime data appears on
 
 The default Hermes config is intentionally minimal — only the Paperclip MCP server is wired in (see the "Paperclip MCP Server" section above). The template bootstraps neutral profile files, installs GBrain skills into Hermes profiles, and creates a separate GBrain home for each synced role (see "Profile Sync & Org Chart" above).
 
+## Backups
+
+All runtime state lives under `/data` inside the `paperclip-data` Docker volume. Back up that single volume and you can rebuild the stack on a fresh host.
+
+What's worth backing up:
+
+- `/data/instances/` — Paperclip companies, agents, kanban, sessions.
+- `/data/hermes/` — Hermes profiles, config, kanban DB.
+- `/data/gbrain/` — GBrain pages per role (the actual knowledge base).
+- `/data/agent-stack/` — protocols, org-chart, profile-sync state.
+
+### Recommended: nightly `restic` to Backblaze B2
+
+Add a Coolify "Scheduled Task" on the Docker Compose app:
+
+- **Container:** `paperclip`
+- **Frequency:** `0 3 * * *` (daily at 03:00)
+- **Command:**
+
+```bash
+RESTIC_PASSWORD_FILE=/data/.restic-password \
+RESTIC_REPOSITORY=b2:<your-bucket-name>:<deploy-name>/paperclip-data \
+B2_ACCOUNT_ID=<keyID> \
+B2_ACCOUNT_KEY=<applicationKey> \
+restic --no-cache backup /data \
+  --exclude /data/.locks \
+  --exclude /data/.cache \
+  --exclude '/data/**/node_modules' \
+&& restic --no-cache forget --prune \
+  --keep-daily 7 --keep-weekly 4 --keep-monthly 12
+```
+
+Bootstrap once before the first scheduled run:
+
+```bash
+# Inside the paperclip container:
+echo '<long random string>' > /data/.restic-password
+chmod 600 /data/.restic-password
+restic init  # creates the encrypted repo in B2
+```
+
+### Restoring on a fresh deploy
+
+```bash
+RESTIC_PASSWORD_FILE=/data/.restic-password \
+RESTIC_REPOSITORY=b2:<your-bucket-name>:<deploy-name>/paperclip-data \
+B2_ACCOUNT_ID=<keyID> \
+B2_ACCOUNT_KEY=<applicationKey> \
+restic restore latest --target /
+```
+
+Restic is not yet bundled in the image. Either:
+
+1. Bake it into the Dockerfile (`apt-get install restic`).
+2. Or run it via a sidecar container in compose that mounts the same `paperclip-data` volume.
+
+### Alternative: bind-mount + host backup
+
+If your Coolify host already has a backup tool (rclone, tarsnap, Time Machine, etc.) covering a host directory, you can convert `paperclip-data` from a named Docker volume to a bind mount of a directory on the host. Any backup of that host directory now captures the agent stack state without a per-container step. This is how `leebarone.dev` is configured — the volume is bind-backed to `~/Documents/GitHub/lee-dashboard/leebarone/hermes/` and rides on the user's Mac-level backup.
+
 ## Scripts
 
 Everything in `scripts/`:
