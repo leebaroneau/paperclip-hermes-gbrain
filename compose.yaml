@@ -40,8 +40,8 @@ services:
       PAPERCLIP_API_KEY: ${PAPERCLIP_API_KEY:-}
       PAPERCLIP_API_BASE: http://127.0.0.1:3100
       PAPERCLIP_DEFAULT_COMPANY_ID: ${PAPERCLIP_DEFAULT_COMPANY_ID:-}
-    ports:
-      - "${PAPERCLIP_PORT:-3100}:3100"
+    expose:
+      - "3100"
     volumes:
       - paperclip-data:/data
     labels:
@@ -71,8 +71,8 @@ services:
       PAPERCLIP_API_BASE: http://paperclip:3100
       PAPERCLIP_DEFAULT_COMPANY_ID: ${PAPERCLIP_DEFAULT_COMPANY_ID:-}
       PAPERCLIP_PROFILE_SYNC_API_KEY: ${PAPERCLIP_PROFILE_SYNC_API_KEY:-}
-    ports:
-      - "${HERMES_PORT:-9119}:9119"
+    expose:
+      - "9119"
     volumes:
       - paperclip-data:/data
     depends_on:
@@ -80,11 +80,13 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.middlewares.gzip.compress=true
+      - traefik.http.middlewares.hermes-auth.basicauth.users=lee:$2y$05$t/lxd/Re7gSnFf2mWOjvEOjfqePOlMxrVXh3r.WOpJK5pUGEa/g6e
       - traefik.http.routers.hermes.entryPoints=http
       - traefik.http.routers.hermes.middlewares=gzip
       - traefik.http.routers.hermes.rule=Host(`${HERMES_HOSTNAME:-hermes.example.com}`)
       - traefik.http.routers.hermes.service=hermes
       - traefik.http.services.hermes.loadbalancer.server.port=9119
+      - traefik.http.routers.https-0-z141d7h67lhshygmp2ad35xg-hermes.middlewares=gzip,hermes-auth
     restart: unless-stopped
 
 volumes:
