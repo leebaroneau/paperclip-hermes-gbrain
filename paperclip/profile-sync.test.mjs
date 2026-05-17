@@ -315,6 +315,30 @@ test('ensureProfileHomes pre-creates Hermes well-known subdirs with 0700 perms',
   }
 });
 
+test('ensureProfileHomes pre-creates well-known subdirs for the default profile (flat layout)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'profile-sync-prewarm-default-'));
+  try {
+    const result = await ensureProfileHomes({
+      profileSlug: 'default',
+      hermesDataRoot: join(root, 'hermes'),
+      gbrainDataRoot: join(root, 'gbrain'),
+      templateDir: join(process.cwd(), 'hermes-runtime/templates'),
+      initGbrain: false,
+    });
+
+    // For the default profile, hermesHome === hermesDataRoot (flat layout).
+    assert.equal(result.hermesHome, join(root, 'hermes'));
+
+    for (const rel of ['cron', 'sessions', 'logs/curator', 'skills']) {
+      const info = await stat(join(result.hermesHome, rel));
+      assert.ok(info.isDirectory(), `${rel} should exist in the flat default layout`);
+      assert.equal(info.mode & 0o777, 0o700);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('ensureProfileHomes restores broken perms on Hermes well-known subdirs (self-heal)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'profile-sync-prewarm-heal-'));
   try {
