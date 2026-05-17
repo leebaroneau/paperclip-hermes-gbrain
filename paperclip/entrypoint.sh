@@ -66,6 +66,7 @@ runuser -u node -- env HERMES_HOME="$HERMES_HOME" GBRAIN_HOME="$GBRAIN_HOME" gbr
 
 eval "$(node /opt/paperclip/patch-paperclip-hermes-defaults.mjs env)"
 node /opt/paperclip/patch-hermes-adapter-env.mjs
+node /opt/paperclip/patch-hermes-adapter-skills-home.mjs
 node /opt/paperclip/patch-paperclip-hermes-defaults.mjs patch
 node /opt/paperclip/patch-paperclip-company-prefix.mjs
 
