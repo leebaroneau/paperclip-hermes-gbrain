@@ -548,12 +548,12 @@ test('reconcileAgents grants task assignment to agents with direct reports', asy
       orgMirrorRoot: root,
     });
 
-    assert.equal(result.permissioned, 2);
+    // CEO is role-passthrough (taskAssignSource: ceo_role comes from Paperclip
+    // itself), so this mechanism skips them in both grant and revoke paths.
+    // Only CTO (a manager with reports who is NOT role-passthrough) receives
+    // the explicit grant.
+    assert.equal(result.permissioned, 1);
     assert.deepEqual(permissionCalls, [
-      {
-        agentId: 'ceo_1',
-        payload: { canCreateAgents: true, canAssignTasks: true },
-      },
       {
         agentId: 'cto_1',
         payload: { canCreateAgents: false, canAssignTasks: true },
@@ -565,16 +565,98 @@ test('reconcileAgents grants task assignment to agents with direct reports', asy
     const cto = orgJson.companies[0].agents.find((agent) => agent.id === 'cto_1');
     const engineer = orgJson.companies[0].agents.find((agent) => agent.id === 'eng_1');
     assert.equal(ceo.directReports, 1);
-    assert.equal(ceo.access.canAssignTasks, true);
     assert.equal(ceo.permissions.canCreateAgents, true);
+    // ceo.access is unset by this mechanism — Paperclip's ceo_role grant
+    // happens server-side and isn't seeded into the org-chart mirror by us.
     assert.equal(cto.directReports, 1);
     assert.equal(cto.access.canAssignTasks, true);
     assert.equal(cto.permissions.canCreateAgents, false);
     assert.equal(engineer.directReports, undefined);
     assert.equal(result.revoked, 0);
     assert.deepEqual(
-      result.manifest.permissionedAgents.map((e) => e.agentId).sort(),
-      ['ceo_1', 'cto_1'],
+      result.manifest.permissionedAgents.map((e) => e.agentId),
+      ['cto_1'],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('reconcileAgents skips role-passthrough agents (CEO) for both grant and revoke paths', async () => {
+  const permissionCalls = [];
+  const root = await mkdtemp(join(tmpdir(), 'profile-sync-ceo-passthrough-'));
+  try {
+    // CEO is in previousPermissioned (e.g. recorded during the first cycle
+    // of the manifest-tracking change before the role-passthrough skip
+    // shipped). The CEO still has direct reports. New behavior: neither
+    // grant nor revoke fires for the CEO — they're managed by ceo_role.
+    // CTO has an engineer report so CTO does qualify as a non-passthrough
+    // manager — used as the positive control in this test.
+    const result = await reconcileAgents({
+      companies: [{ id: 'co_1', name: 'Acme, Inc.' }],
+      listAgents: async () => [
+        {
+          id: 'ceo_1',
+          name: 'CEO',
+          role: 'ceo',
+          adapterType: 'process',
+          permissions: { canCreateAgents: true },
+        },
+        {
+          id: 'cto_1',
+          name: 'CTO',
+          role: 'cto',
+          adapterType: 'process',
+          reportsTo: 'ceo_1',
+          permissions: { canCreateAgents: false },
+        },
+        {
+          id: 'eng_1',
+          name: 'Engineer',
+          role: 'engineer',
+          adapterType: 'process',
+          reportsTo: 'cto_1',
+          permissions: { canCreateAgents: false },
+        },
+      ],
+      patchAgent: async (agentId, payload) => ({ id: agentId, ...payload }),
+      patchAgentPermissions: async (agentId, payload) => {
+        permissionCalls.push({ agentId, payload });
+        return { id: agentId, permissions: { canCreateAgents: payload.canCreateAgents } };
+      },
+      ensureHomes: async () => {
+        throw new Error('ensureHomes should not be called for process agents');
+      },
+      manifest: {
+        managedAgents: [],
+        permissionedAgents: [
+          {
+            companyId: 'co_1',
+            agentId: 'ceo_1',
+            grantedAt: '2026-05-01T00:00:00.000Z',
+            lastSeenAt: '2026-05-01T00:00:00.000Z',
+          },
+        ],
+      },
+      paperclipAgentServerUrl: 'http://paperclip:3100',
+      orgMirrorRoot: root,
+    });
+
+    // CTO still qualifies — they should get the standard grant.
+    // CEO has direct reports but is role-passthrough — no grant call.
+    // CEO in previousPermissioned but role-passthrough — no revoke either.
+    assert.deepEqual(
+      permissionCalls.map((c) => c.agentId),
+      ['cto_1'],
+      'only CTO should receive a permission patch; CEO is skipped both ways',
+    );
+    assert.equal(result.permissioned, 1);
+    assert.equal(result.revoked, 0);
+
+    // CEO drops out of the manifest's permissionedAgents naturally.
+    assert.deepEqual(
+      result.manifest.permissionedAgents.map((e) => e.agentId),
+      ['cto_1'],
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -640,18 +722,25 @@ test('reconcileAgents revokes task assignment when a previously permissioned age
     });
 
     assert.equal(result.revoked, 1, 'CTO should be revoked');
-    assert.equal(result.permissioned, 1, 'CEO is still a manager and should be re-granted');
+    // CEO is role-passthrough — neither granted nor revoked by this mechanism.
+    assert.equal(result.permissioned, 0, 'CEO is role-passthrough so no explicit grant happens');
 
     const revokeCall = permissionCalls.find((c) => c.agentId === 'cto_1');
     assert.deepEqual(revokeCall.payload, {
       canCreateAgents: false,
       canAssignTasks: false,
     });
+    // Only the CTO revoke was issued — CEO is never patched in either path.
+    assert.deepEqual(
+      permissionCalls.map((c) => c.agentId),
+      ['cto_1'],
+    );
 
     // CTO should no longer be in the next manifest's permissionedAgents.
+    // CEO is role-passthrough so they don't go in either. Empty.
     assert.deepEqual(
       result.manifest.permissionedAgents.map((e) => e.agentId),
-      ['ceo_1'],
+      [],
     );
   } finally {
     await rm(root, { recursive: true, force: true });

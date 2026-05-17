@@ -461,6 +461,7 @@ export async function reconcileAgents({
       } else if (
         grantManagerAssignTasks
         && !retiredAgent
+        && !isManagerAssignRolePassthrough(agent)
         && wasPreviouslyPermissioned
         && !qualifiesForManagerAssign
         && patchAgentPermissions
@@ -668,7 +669,22 @@ function agentReportsTo(agent) {
 }
 
 function shouldGrantManagerAssignment(agent, context) {
-  return Boolean(agent?.id && Number(context?.directReportCount || 0) > 0);
+  return Boolean(
+    agent?.id
+    && !isManagerAssignRolePassthrough(agent)
+    && Number(context?.directReportCount || 0) > 0,
+  );
+}
+
+// CEOs (and any future role that Paperclip exposes via its built-in
+// `taskAssignSource: ceo_role` derivation) get `canAssignTasks` from
+// role-based permission system, not from the explicit-grant table. Issuing
+// our own explicit-grant patch on top is a no-op on effective behavior but
+// pollutes the manifest and the `grants` array. Skip them in both the grant
+// and revoke paths so this mechanism only manages explicit grants for
+// non-role-derived managers.
+function isManagerAssignRolePassthrough(agent) {
+  return String(agent?.role || '').toLowerCase() === 'ceo';
 }
 
 function managerAssignmentPermissions(agent) {
