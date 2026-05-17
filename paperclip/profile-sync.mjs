@@ -641,7 +641,7 @@ function normalizeOrgAgent(agent, { profileSlug, directReportCount = 0 } = {}) {
   });
 }
 
-function countDirectReports(agents) {
+export function countDirectReports(agents) {
   const activeIds = new Set(agents.map((agent) => agent.id).filter(Boolean));
   const counts = new Map();
 
@@ -694,7 +694,7 @@ function managerAssignmentPermissions(agent) {
   };
 }
 
-function revokeManagerAssignmentPermissions(agent) {
+export function revokeManagerAssignmentPermissions(agent) {
   // Preserve canCreateAgents — only revoke canAssignTasks. Mirrors the grant
   // payload shape so the API merges cleanly.
   return {
@@ -829,7 +829,7 @@ function shouldManageAgent(agent) {
     || Boolean(agent?.metadata?.agentStackProfileSlug);
 }
 
-function isRetiredAgent(agent) {
+export function isRetiredAgent(agent) {
   if (agent?.terminatedAt || agent?.deletedAt || agent?.archivedAt || agent?.deactivatedAt) return true;
 
   const states = [
