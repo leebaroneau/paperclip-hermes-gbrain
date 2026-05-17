@@ -12,6 +12,7 @@ import {
   readdir,
   rename,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -204,6 +205,9 @@ export async function ensureProfileHomes({
     await cloneDefaultHermesProfile({ hermesDataRoot, hermesHome });
     await cloneDefaultGbrainTemplate({ gbrainDataRoot, gbrainHome });
   }
+
+  // Always (re)install bundled Hermes skills so existing broken profiles self-heal.
+  await installBundledHermesSkills(hermesHome);
 
   await copyFirstExistingIfMissing(
     [
@@ -707,6 +711,28 @@ async function cloneDefaultGbrainTemplate({ gbrainDataRoot, gbrainHome }) {
       join(gbrainHome, ...relativePath.split('/')),
       () => false,
     );
+  }
+}
+
+async function installBundledHermesSkills(hermesHome) {
+  const src = process.env.HERMES_BUNDLED_SKILLS_SOURCE || '/usr/local/lib/hermes-agent/skills';
+  if (!(await exists(src))) return;
+
+  const skillsDir = join(hermesHome, 'skills');
+  await mkdir(skillsDir, { recursive: true });
+
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const linkPath = join(skillsDir, entry.name);
+    try {
+      const st = await lstat(linkPath);
+      if (!st.isSymbolicLink()) continue; // user-modified or Hermes-installed; leave alone
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
+    try { await rm(linkPath); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    await symlink(join(src, entry.name), linkPath);
   }
 }
 
