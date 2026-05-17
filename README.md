@@ -231,6 +231,25 @@ What Coolify *does* read is the per-service domain map on the application resour
 
 Symptom of missing this step: `paperclip.<your-domain>` works (Coolify routes the app's primary FQDN to the first compose service for free) but `hermes.<your-domain>` returns 404. `docker inspect <hermes-container> | grep traefik` shows either no routers or routers with literal `${VAR}` text — both mean the per-service map was never set.
 
+### Traefik labels must be UUID-agnostic
+
+**Never write a Coolify resource UUID into a Traefik label in this compose.** Coolify auto-generates `routers.http-0-<this-app-uuid>-<service>` and `routers.https-0-<this-app-uuid>-<service>` per app at deploy time, and it mirrors any middleware chain you put on the user-defined router (`routers.hermes.middlewares=...`) onto the auto-generated ones. The auto-gen path is the only correct one because each Coolify instance fills in its own UUID.
+
+Embedding a literal UUID — for example `traefik.http.routers.https-0-z141d7h67lhshygmp2ad35xg-hermes.middlewares=gzip,hermes-auth` — pins that router to one specific Coolify app. When the same compose is deployed to a second Coolify instance (different UUID), the second instance ends up with both its own correct auto-generated routers AND the original instance's leaked router, all listening on the same `Host()`. Traefik then picks between them by priority/specificity, producing inconsistent behavior across requests (some authed, some not).
+
+To attach a middleware like basicAuth, attach it to the **user-named router only**:
+
+```yaml
+- traefik.http.middlewares.hermes-auth.basicauth.users=admin:<bcrypt>
+- traefik.http.routers.hermes.entryPoints=http
+- traefik.http.routers.hermes.middlewares=gzip,hermes-auth          # ← middleware chain here, Coolify mirrors to https-0-<uuid>-hermes
+- traefik.http.routers.hermes.rule=Host(`${HERMES_HOSTNAME:-hermes.example.com}`)
+- traefik.http.routers.hermes.service=hermes
+- traefik.http.services.hermes.loadbalancer.server.port=9119
+```
+
+If you find a `routers.https-0-<some-uuid>-...` or `routers.http-0-<some-uuid>-...` line written into this compose (by hand-edit, a previous merge, or a paste from a Coolify-rendered compose), delete it before committing — Coolify will regenerate the right version per deploy.
+
 ## Paperclip MCP Server
 
 The blank Hermes config is intentionally empty, with one exception: a Paperclip MCP server is wired in by default so Hermes agents in any new setup can file and track work in Paperclip through typed tool calls instead of constructing shell `curl` commands.
