@@ -187,6 +187,45 @@ After the stack is deployed (locally or via Coolify) and the containers are runn
 
 8. **Deploy.** Then follow the First-Run Flow above to mint the API key and activate the MCP server.
 
+### Auto-deploy from `main`
+
+[`.github/workflows/build-image.yml`](.github/workflows/build-image.yml) rebuilds and pushes `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest` on every push to `main` that touches `paperclip/**`, `hermes-runtime/**`, or the workflow file itself. After the image push the workflow makes three HTTP calls to `/api/v1/deploy?uuid=<app-uuid>` on each Coolify (ALX, Leebarone, Genvest) so they pull the new image and recreate containers.
+
+Per-deployment credentials live in this repo's GitHub Actions config (Settings → Secrets and variables → Actions):
+
+| Deployment | `vars.COOLIFY_*_BASE_URL` | `vars.COOLIFY_*_APP_UUID` | `secrets.COOLIFY_*_TOKEN` |
+| --- | --- | --- | --- |
+| ALX | `https://coolify.alxfinance.com.au` | ALX app uuid | ALX Coolify API token |
+| Leebarone | `https://coolify.leebarone.dev` | Leebarone app uuid | Leebarone token |
+| Genvest | `http://209.38.27.69:8000` | Genvest app uuid | Genvest token |
+
+Each trigger is conditional on the corresponding vars+secret being non-empty, so a deployment that hasn't been registered is silently skipped (not failed).
+
+### Recovering from a stuck deploy
+
+The default `force=false` lets Coolify skip a deploy if it thinks the app is already up-to-date. That skip check can race the GHCR manifest push, leaving live containers on the previous `:latest` even after the workflow runs green. Telltale signs:
+
+- `docker inspect <container> --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'` shows an old commit SHA.
+- New env vars from a fresh PR are missing inside the container.
+- A line you just added to a baked-in file (e.g. `paperclip/profile-sync.mjs`) is not present at `/opt/paperclip/profile-sync.mjs`.
+
+To force every Coolify to recreate regardless of its skip check, run:
+
+```bash
+gh workflow run build-image.yml -f force=true
+```
+
+This is a `workflow_dispatch` trigger that passes `force=true` through to all three Coolify deploy URLs. The image rebuild is cache-hot (~1–2 min); the Coolify recreates fire on completion.
+
+**Pull-race caveat:** Coolify's deploy recreates containers but does not always `docker pull` first — it can reuse the locally-cached `:latest`, which on a stuck deployment is the old image. If `force=true` recreates the container but the revision label still points at the old SHA, prime the local cache before retrying:
+
+```bash
+ssh <host> docker pull ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest
+gh workflow run build-image.yml -f force=true
+```
+
+The durable fix is configuring each Coolify app's image-pull-policy to "Always" (UI: app → Configuration → Image Pull Policy). Then `force=true` alone is sufficient.
+
 ### Coolify env variable checklist
 
 **Required for any deployment:**
