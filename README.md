@@ -216,6 +216,15 @@ PROFILE_SYNC_DELETE_MODE=archive
 PAPERCLIP_PROFILE_SYNC_API_KEY=<pcp_board_...>   # same key as PAPERCLIP_API_KEY is fine
 ```
 
+**Gateway autostart for profiles with messaging credentials:**
+
+```env
+HERMES_GATEWAY_AUTOSTART=1
+HERMES_GATEWAY_PROFILES=auto
+```
+
+`auto` starts any existing Hermes profile whose `.env` contains a messaging credential such as `TELEGRAM_BOT_TOKEN`. To pin an explicit set, use a comma-separated list like `sales,support`. To disable gateway autostart, set `HERMES_GATEWAY_AUTOSTART=0`.
+
 **Do NOT add blank LLM provider keys** (`OPENAI_API_KEY=`, `ANTHROPIC_API_KEY=`, `OPENROUTER_API_KEY=`) to Coolify. Hermes boots without them; the first-run flow configures a provider via the dashboard at `hermes.<client-domain>/env`.
 
 For single-VM deployments, profile-sync env can live in `/data/agent-stack/profile-sync/profile-sync.env` (root-readable) instead of Coolify env. Override `ORG_MIRROR_ROOT` only if you need the org chart files somewhere other than `/data/agent-stack`.
