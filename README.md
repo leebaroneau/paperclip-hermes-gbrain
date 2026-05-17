@@ -82,7 +82,24 @@ Stop it with:
 
 After the stack is deployed (locally or via Coolify) and the containers are running:
 
-1. **Open Paperclip and claim the first admin user.** Paperclip runs in `PAPERCLIP_DEPLOYMENT_MODE=authenticated`. The first visitor to `https://paperclip.<your-domain>/` (or `http://localhost:3100/` locally) is prompted to claim the instance. If no claim flow appears, run `paperclipai auth bootstrap-ceo` inside the container to mint a one-time invite URL.
+1. **Open Paperclip and claim the first admin user.** Paperclip runs in `PAPERCLIP_DEPLOYMENT_MODE=authenticated`. The first visitor to `https://paperclip.<your-domain>/` (or `http://localhost:3100/` locally) is prompted to claim the instance.
+
+   > ⚠️ **Save the email + password you set on this screen into a password manager *before* you click submit.** There is no email-based password reset in this stack (no SMTP is configured by default). If you lose those credentials, see "Lost admin access?" below.
+
+   If no claim flow appears at all (e.g. an admin was already created but the invite link expired before being used), open a shell in the container and mint a fresh one-time invite URL:
+
+   ```bash
+   # From the Coolify host, or via `coolify exec`:
+   docker exec -u node -it <paperclip-container> \
+     paperclipai auth bootstrap-ceo \
+     --data-dir /data \
+     --base-url https://paperclip.<your-domain> \
+     --force
+   ```
+
+   The CLI prints `Invite URL: https://paperclip.<your-domain>/invite/<token>` (expires in 72 hours). Open it in a browser to create the admin.
+
+   **Lost admin access?** Same command. `--force` revokes any previous bootstrap invite and issues a new one even if an `instance_admin` already exists. The original admin row stays in the DB but you can sign in via the new invite and demote/remove it.
 
 2. **Create or claim a company.** Each company is its own Paperclip workspace. Set a goal, name a CEO. The default Hermes agent is seeded automatically when profile-sync is enabled — otherwise see "Seed Default Hermes Agent" below.
 
@@ -92,9 +109,9 @@ After the stack is deployed (locally or via Coolify) and the containers are runn
    docker compose --env-file .env exec paperclip paperclipai auth login --api-base http://127.0.0.1:3100
    ```
 
-   The CLI prints an approval URL. Open it in a browser, sign in, click approve. The CLI then has a `pcp_board_*` token in hand.
+   The CLI prints an approval URL. Open it in a browser, sign in with the admin user from step 1, click approve. The CLI then prints a `pcp_board_*` token — **copy it now into a password manager**; the API does not let you retrieve it again later. (You can mint additional keys by repeating this command.)
 
-4. **Set `PAPERCLIP_API_KEY` in env** (Coolify or local `.env`). This activates the Paperclip MCP server inside Hermes — without a key, every MCP tool call from Hermes will return 401.
+4. **Set `PAPERCLIP_API_KEY=<pcp_board_…>` in env** (Coolify → app → Environment Variables, or local `.env`). This activates the Paperclip MCP server inside Hermes — without a key, every MCP tool call from Hermes will return 401.
 
 5. **Optionally set `PROFILE_SYNC_ENABLED=1`** and `PAPERCLIP_PROFILE_SYNC_API_KEY=<same-key>` to give each Paperclip agent its own isolated Hermes profile and GBrain home (see "Profile Sync & Org Chart").
 
