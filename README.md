@@ -59,6 +59,12 @@ The Paperclip MCP server (see below) closes the loop: Hermes-side agents can fil
 - `hermes` runs the Hermes dashboard on port `9119`.
 - Both services share the `paperclip-data` volume at `/data`.
 
+## Paperclip Version
+
+The image installs the published npm package selected by the `PAPERCLIP_VERSION` Docker build arg. Keep this on the normal release path and bump it after Paperclip publishes the runtime identity and tool access work.
+
+The tool access seed below is safe to ship before those Paperclip APIs exist: on older Paperclip builds it receives a 404, logs a skip, and leaves the stack unchanged. Avoid branch-building Paperclip directly inside this template unless you also re-verify the runtime patches, because the template currently patches the published npm package layout at container start.
+
 ## /data Volume Layout
 
 Everything persistent lives under `/data`, mounted from the `paperclip-data` Docker volume.
@@ -153,7 +159,7 @@ After the stack is deployed (locally or via Coolify) and the containers are runn
 
 4. **Set `PAPERCLIP_API_KEY=<pcp_board_…>` in env** (Coolify → app → Environment Variables, or local `.env`). This activates the Paperclip MCP server inside Hermes — without a key, every MCP tool call from Hermes will return 401.
 
-5. **Optionally set `PROFILE_SYNC_ENABLED=1`** and `PAPERCLIP_PROFILE_SYNC_API_KEY=<same-key>` to give each Paperclip agent its own isolated Hermes profile and GBrain home (see "Profile Sync & Org Chart").
+5. **Optionally set `PROFILE_SYNC_ENABLED=1`** and `PAPERCLIP_PROFILE_SYNC_API_KEY=<same-key>` to give each Paperclip agent its own isolated Hermes profile and GBrain home (see "Profile Sync & Org Chart"). On Paperclip builds with tool access APIs, profile-sync also seeds the company tool catalog and applies the default Hermes access preset.
 
 6. **Redeploy / restart** so the env changes land in the container.
 
@@ -254,6 +260,9 @@ PROFILE_SYNC_INTERVAL_SEC=60
 PROFILE_SYNC_DELETE_MODE=archive
 PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=1
 PAPERCLIP_PROFILE_SYNC_API_KEY=<pcp_board_...>   # same key as PAPERCLIP_API_KEY is fine
+TOOL_ACCESS_SEED_ENABLED=1
+TOOL_ACCESS_APPLY_DEFAULT_PRESET=1
+TOOL_ACCESS_DEFAULT_PRESET=agent-stack-hermes-default
 ```
 
 Profile sync also grants `canAssignTasks` to active agents that have direct reports, preserving their existing `canCreateAgents` setting. Disable with `PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=0` if a deployment wants CEO-only task assignment.
@@ -307,7 +316,7 @@ If you find a `routers.https-0-<some-uuid>-...` or `routers.http-0-<some-uuid>-.
 
 The blank Hermes config is intentionally empty, with one exception: a Paperclip MCP server is wired in by default so Hermes agents in any new setup can file and track work in Paperclip through typed tool calls instead of constructing shell `curl` commands.
 
-The server lives at `paperclip/mcp-paperclip/` and is baked into the image at `/opt/paperclip/mcp-paperclip/`. It is registered in `hermes-runtime/templates/config.yaml` under `mcp_servers.paperclip`, exposing eight tools to every Hermes profile:
+The server lives at `paperclip/mcp-paperclip/` and is baked into the image at `/opt/paperclip/mcp-paperclip/`. It is registered in `hermes-runtime/templates/config.yaml` under `mcp_servers.paperclip`, exposing eight tools to every Hermes profile as the blank-template fallback:
 
 ```text
 paperclip_list_companies
@@ -338,6 +347,8 @@ docker compose --env-file .env exec paperclip paperclipai auth login --api-base 
 That command prints an approval URL — open it in a browser, sign in, click approve. The CLI then stores a `pcp_board_*` token; copy it into Coolify env as `PAPERCLIP_API_KEY` and redeploy.
 
 Optional convenience env: set `PAPERCLIP_DEFAULT_COMPANY_ID=<uuid>` so single-company setups don't need to pass `companyId` on every tool call.
+
+On Paperclip builds with company tool access APIs, profile-sync seeds matching Paperclip MCP tool records and the selected preset renders per-agent `mcp_servers.paperclip.tools.include` lists into each `hermes_local` agent's adapter config.
 
 Health check from inside the container:
 
@@ -379,7 +390,7 @@ The `paperclip` container's entrypoint runs four small Node patches against Pape
 | `patch-hermes-adapter-skills-home.mjs` | Rewrite `hermes-paperclip-adapter`'s `listSkills` so it scans `<HERMES_HOME>/skills/` (instead of always `$HOME/.hermes/skills/`) and follows symlinks at both the category and item levels. Without this, every per-role profile that profile-sync creates reports 0 skills in Paperclip's UI/API even though Hermes itself loads them fine. |
 | `patch-paperclip-company-prefix.mjs` | Relax Paperclip's company URL-key prefix constraints to allow the slugs the agent stack uses. |
 
-All four are idempotent and re-applied on every container start. If you upgrade Paperclip (`PAPERCLIP_VERSION` build arg), re-run the patch tests:
+All four are idempotent and re-applied on every container start. The tool access seed does not replace these patches; keep them until the matching behavior has shipped upstream and the patch tests prove they are no longer needed. If you upgrade Paperclip (`PAPERCLIP_VERSION` build arg), re-run the patch tests:
 
 ```bash
 node paperclip/patch-paperclip-hermes-defaults.test.mjs
@@ -405,6 +416,29 @@ The script POSTs or PATCHes a single `Hermes` agent per company with:
 - `capabilities` pointing the agent at the shared delegation protocol and org chart
 
 Re-running is safe: existing agents are patched, not duplicated.
+
+## Tool Access Seed
+
+`paperclip/seed-tool-access.mjs` seeds the company-level tool catalog and role presets used by Paperclip's tool access matrix. Profile-sync invokes it automatically after reconciling Hermes profiles when `TOOL_ACCESS_SEED_ENABLED=1`.
+
+The default catalog contains Hermes adapter toolsets (`terminal`, `file`, `web`) and the bundled Paperclip MCP tools. The default `agent-stack-hermes-default` preset grants the same broad access the template historically gave Hermes agents, but routes it through Paperclip's auditable grant model when the API is available.
+
+```env
+TOOL_ACCESS_SEED_ENABLED=1
+TOOL_ACCESS_APPLY_DEFAULT_PRESET=1
+TOOL_ACCESS_DEFAULT_PRESET=agent-stack-hermes-default
+```
+
+Re-running is safe. The script creates missing tools and presets only, and it applies the default preset only when an active `hermes_local` agent does not already have the matching grants. On Paperclip builds without the tool access API it logs a skip and makes no changes.
+
+Manual run:
+
+```bash
+PAPERCLIP_API_BASE=http://localhost:3100 \
+PAPERCLIP_API_KEY=<pcp_board_...> \
+PAPERCLIP_COMPANY_ID=<company-uuid> \
+node paperclip/seed-tool-access.mjs
+```
 
 ## GBrain Skills
 
@@ -442,6 +476,9 @@ PROFILE_SYNC_ENABLED=1
 PROFILE_SYNC_INTERVAL_SEC=60
 PROFILE_SYNC_DELETE_MODE=archive
 PAPERCLIP_PROFILE_SYNC_API_KEY=<pcp_board_...>
+TOOL_ACCESS_SEED_ENABLED=1
+TOOL_ACCESS_APPLY_DEFAULT_PRESET=1
+TOOL_ACCESS_DEFAULT_PRESET=agent-stack-hermes-default
 ```
 
 Every `hermes_local` Paperclip agent gets:

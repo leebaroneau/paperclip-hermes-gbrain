@@ -18,6 +18,7 @@ import {
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { seedToolAccessForCompanies } from './seed-tool-access.mjs';
 
 const MANAGED_BY = 'agent-stack profile-sync.mjs';
 const DEFAULT_TEMPLATE_DIR = '/opt/hermes-runtime/templates';
@@ -1214,6 +1215,15 @@ async function runOnceFromEnv() {
     initGbrain: !envBool('PROFILE_SYNC_SKIP_GBRAIN_INIT', false),
     grantManagerAssignTasks: envBool('PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS', true),
   });
+  const toolAccessSummaries = envBool('TOOL_ACCESS_SEED_ENABLED', true)
+    ? await seedToolAccessForCompanies({
+      api,
+      companies,
+      applyDefaultPreset: envBool('TOOL_ACCESS_APPLY_DEFAULT_PRESET', true),
+      defaultPresetKey: envValue('TOOL_ACCESS_DEFAULT_PRESET', 'agent-stack-hermes-default'),
+      log: console.log,
+    })
+    : [];
 
   await writeManifest(result.manifest, manifestPath);
   console.log(JSON.stringify({
@@ -1226,6 +1236,13 @@ async function runOnceFromEnv() {
     retired: result.retired,
     managedAgents: result.manifest.managedAgents.length,
     permissionedAgents: result.manifest.permissionedAgents.length,
+    toolAccess: {
+      companies: toolAccessSummaries.length,
+      createdTools: toolAccessSummaries.reduce((sum, item) => sum + (item.createdTools || 0), 0),
+      createdPresets: toolAccessSummaries.reduce((sum, item) => sum + (item.createdPresets || 0), 0),
+      appliedPresets: toolAccessSummaries.reduce((sum, item) => sum + (item.appliedPresets || 0), 0),
+      skipped: toolAccessSummaries.filter((item) => item.skipped).length,
+    },
   }));
 }
 
