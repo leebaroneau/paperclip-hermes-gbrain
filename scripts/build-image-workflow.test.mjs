@@ -29,6 +29,7 @@ test('compose builds the agent stack from the repository while GHCR deploys are 
 
   assert.match(compose, /x-agent-stack-build:[\s\S]*image: template-agent:\$\{SOURCE_COMMIT:-local\}/);
   assert.match(compose, /build:[\s\S]*context: \.[\s\S]*dockerfile: paperclip\/Dockerfile/);
+  assert.match(compose, /pull_policy:\s*build/);
   assert.doesNotMatch(compose, /pull_policy:\s*always/);
 });
 
