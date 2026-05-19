@@ -62,7 +62,7 @@ The Paperclip MCP server (see below) closes the loop: Hermes-side agents can fil
 
 ## Image Tags and Preview Deployments
 
-`compose.yaml` currently builds the Paperclip/Hermes stack directly from the checked-out repository and tags it as `template-agent:${SOURCE_COMMIT:-local}`. This keeps PR previews testable while GHCR publishing is paused.
+`compose.yaml` currently builds the Paperclip/Hermes stack directly from the checked-out repository and lets Compose/Coolify tag each service locally. This keeps PR previews testable while GHCR publishing is paused.
 
 The GitHub image workflow can still publish production images when re-enabled. Preview images are manual so normal pull requests stay fast:
 

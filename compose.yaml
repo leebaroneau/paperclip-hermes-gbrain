@@ -1,5 +1,4 @@
 x-agent-stack-build: &agent-stack-build
-  image: template-agent:${SOURCE_COMMIT:-local}
   pull_policy: build
   build:
     context: .
