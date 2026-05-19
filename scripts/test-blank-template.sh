@@ -36,7 +36,7 @@ for file in \
   # "leebarone.dev" but NOT the shared image registry user "leebaroneau"
   # in `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest`, which is the
   # canonical image all three deployments pull from (see README).
-  check_absent "$file" 'Lee'\''s|\bleebarone\b|haverford|alx-finance|paperclip\.leebarone\.dev|hermes\.leebarone\.dev|HERMES_BRIDGE_TOKEN|SERVICE_FQDN_|SERVICE_URL_|COOLIFY_FQDN' "template should not include live client or deployment values"
+  check_absent "$file" 'Lee'\''s|\bleebarone\b|haverford|alx-finance|paperclip\.leebarone\.dev|hermes\.leebarone\.dev|HERMES_BRIDGE_TOKEN' "template should not include live client or deployment values"
 done
 
 for expected in \

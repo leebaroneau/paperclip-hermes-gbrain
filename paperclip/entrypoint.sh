@@ -26,6 +26,11 @@ if [[ -f "$PROFILE_SYNC_ENV_FILE" ]]; then
   set +a
 fi
 
+if [[ -f /opt/paperclip/coolify-preview-env.mjs ]]; then
+  coolify_preview_exports="$(node /opt/paperclip/coolify-preview-env.mjs)"
+  eval "$coolify_preview_exports"
+fi
+
 export ORG_MIRROR_ROOT="${ORG_MIRROR_ROOT:-/data/agent-stack}"
 
 mkdir -p "$HERMES_DATA_ROOT" "$GBRAIN_DATA_ROOT" /home/node/.hermes /opt/work /data/.locks

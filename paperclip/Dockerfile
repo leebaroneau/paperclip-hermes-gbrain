@@ -97,6 +97,7 @@ COPY paperclip/important-information-index.md /opt/paperclip/important-informati
 COPY paperclip/gbrain-wrapper.sh /usr/local/bin/gbrain
 COPY paperclip/entrypoint.sh /opt/paperclip/entrypoint.sh
 COPY paperclip/hermes-entrypoint.sh /opt/paperclip/hermes-entrypoint.sh
+COPY paperclip/coolify-preview-env.mjs /opt/paperclip/coolify-preview-env.mjs
 COPY paperclip/patch-hermes-adapter-env.mjs /opt/paperclip/patch-hermes-adapter-env.mjs
 COPY paperclip/patch-hermes-adapter-skills-home.mjs /opt/paperclip/patch-hermes-adapter-skills-home.mjs
 COPY paperclip/patch-paperclip-company-prefix.mjs /opt/paperclip/patch-paperclip-company-prefix.mjs

@@ -83,6 +83,8 @@ AGENT_STACK_IMAGE=ghcr.io/leebaroneau/paperclip-hermes-gbrain:sha-$SOURCE_COMMIT
 
 Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal). Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 automatically pull their own image without manually changing `AGENT_STACK_IMAGE`.
 
+Paperclip adopts Coolify's preview `SERVICE_URL_PAPERCLIP` and `SERVICE_FQDN_PAPERCLIP` at container start for PR previews, so preview hostnames are added to `PAPERCLIP_ALLOWED_HOSTNAMES` automatically. For Cloudflare Universal SSL, use one-label preview hostnames like `paperclip-pr-17.example.com`; nested names like `17.paperclip.example.com` usually require an additional wildcard certificate.
+
 Do not use a shared tag like `:pr` unless you intentionally only ever run one PR preview at a time. A single shared PR tag would be overwritten by whichever PR built last.
 
 ## Paperclip Version
