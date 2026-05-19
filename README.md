@@ -69,7 +69,11 @@ The GitHub image workflow publishes different tags for production and pull reque
 | Push to `main` | `latest`, `paperclip-<version>`, `sha-<commit>` |
 | Pull request | `pr-<number>`, `sha-<commit>` |
 
+The workflow intentionally publishes to `ghcr.io/leebaroneau/paperclip-hermes-gbrain` even if the GitHub repository is renamed. Existing Coolify apps should keep consuming the stable image package rather than a repo-name-derived package.
+
 `pr-<number>` is stable for the lifetime of one PR: PR #17 publishes `pr-17`, PR #18 publishes `pr-18`, and every new push to that PR overwrites the same PR tag.
+
+Pull request image builds publish `linux/amd64` only, which matches the Coolify preview hosts and keeps source-build preview images fast. Pushes to `main` and manual workflow dispatches continue publishing the multi-arch `linux/amd64,linux/arm64` image.
 
 For Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
 
