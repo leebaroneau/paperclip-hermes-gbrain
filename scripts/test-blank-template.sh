@@ -83,13 +83,28 @@ if grep -nE 'npm install -g \./cli' paperclip/Dockerfile >/dev/null 2>&1; then
   failed=1
 fi
 
-if ! grep -nE 'npm pack \./cli' paperclip/Dockerfile >/dev/null 2>&1; then
-  echo "Paperclip git builds should pack ./cli before global install so the binary survives /tmp cleanup." >&2
+if ! grep -nE 'git clone --filter=blob:none "\$\{PAPERCLIP_GIT_REPO\}" "\$\{PAPERCLIP_SOURCE_DIR\}"' paperclip/Dockerfile >/dev/null 2>&1; then
+  echo "Paperclip git builds should clone PR source into PAPERCLIP_SOURCE_DIR so server/shared/db PR changes are tested together." >&2
+  failed=1
+fi
+
+if ! grep -nE 'pnpm config set store-dir /opt/pnpm-store' paperclip/Dockerfile >/dev/null 2>&1; then
+  echo "Paperclip git builds should keep the pnpm store inside the image for the source runtime." >&2
+  failed=1
+fi
+
+if ! grep -nE 'cli/node_modules/tsx/dist/cli\.mjs /opt/paperclip-src/cli/src/index\.ts' paperclip/Dockerfile >/dev/null 2>&1; then
+  echo "Paperclip git builds should run the PR workspace through tsx instead of pulling the published server package." >&2
   failed=1
 fi
 
 if ! grep -nE 'npm uninstall -g pnpm' paperclip/Dockerfile >/dev/null 2>&1; then
   echo "Paperclip git builds should uninstall build-only pnpm before the final image layer." >&2
+  failed=1
+fi
+
+if ! grep -nE 'PAPERCLIP_UI_DEV_MIDDLEWARE=false' paperclip/Dockerfile >/dev/null 2>&1; then
+  echo "Paperclip source-runtime images should disable UI dev middleware and serve built UI assets." >&2
   failed=1
 fi
 

@@ -10,6 +10,8 @@ ARG GBRAIN_REF=eval-run-v0.35.1.0-baseline
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PAPERCLIP_HOME=/data
 ENV PAPERCLIP_TELEMETRY_DISABLED=1
+ENV PAPERCLIP_UI_DEV_MIDDLEWARE=false
+ENV PAPERCLIP_SOURCE_DIR=/opt/paperclip-src
 ENV HERMES_DATA_ROOT=/data/hermes
 ENV GBRAIN_DATA_ROOT=/data/gbrain
 ENV HERMES_HOME=/data/hermes
@@ -68,19 +70,20 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
   && bun install --production
 
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     if [ -n "${PAPERCLIP_GIT_REF}" ]; then \
-      git clone --filter=blob:none "${PAPERCLIP_GIT_REPO}" /tmp/paperclip-src \
-      && cd /tmp/paperclip-src \
+      git clone --filter=blob:none "${PAPERCLIP_GIT_REPO}" "${PAPERCLIP_SOURCE_DIR}" \
+      && cd "${PAPERCLIP_SOURCE_DIR}" \
       && git fetch --depth 1 origin "${PAPERCLIP_GIT_REF}" \
       && git checkout FETCH_HEAD \
       && npm install -g pnpm@9.15.4 \
+      && pnpm config set store-dir /opt/pnpm-store \
       && pnpm install --frozen-lockfile \
-      && pnpm build:npm -- --skip-checks --skip-typecheck \
-      && npm pack ./cli --pack-destination /tmp \
-      && npm install -g /tmp/paperclipai-*.tgz \
+      && pnpm build \
+      && PAPERCLIP_RELEASE_REUSE_UI_DIST=1 pnpm --filter @paperclipai/server prepare:ui-dist \
+      && printf '%s\n' '#!/usr/bin/env bash' 'exec node /opt/paperclip-src/cli/node_modules/tsx/dist/cli.mjs /opt/paperclip-src/cli/src/index.ts "$@"' > /usr/local/bin/paperclipai \
+      && chmod +x /usr/local/bin/paperclipai \
       && npm uninstall -g pnpm \
-      && rm -rf /tmp/paperclip-src /tmp/paperclipai-*.tgz; \
+      && paperclipai --version; \
     else \
       npm install -g "paperclipai@${PAPERCLIP_VERSION}"; \
     fi

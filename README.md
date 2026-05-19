@@ -65,6 +65,8 @@ This draft template branch builds Paperclip from `PAPERCLIP_GIT_REPO` / `PAPERCL
 
 Do not clear `PAPERCLIP_GIT_REF` on this branch until those Paperclip changes have shipped in the published `paperclipai` package; the removed Hermes defaults patch is now owned by PR #6230. To return this template to the normal release path after publish, build with `PAPERCLIP_GIT_REF=` and bump the `PAPERCLIP_VERSION` Docker build arg. `profile-sync.mjs` now adopts Paperclip's `metadata.runtimeIdentity.profileSlug` and `metadata.runtimeIdentity.hermesHome` when present, then falls back to its legacy `/data/hermes/profiles/<company-role>` layout for older Paperclip builds.
 
+When `PAPERCLIP_GIT_REF` is set, the image keeps the checked-out Paperclip workspace at `/opt/paperclip-src` and runs the CLI through `tsx`. This is intentional for the draft branch: packing only `./cli` would pull the published `@paperclipai/server` package from npm and would not actually test the PR's server, DB, shared, UI, and adapter-utils changes.
+
 The tool access seed below is safe to run before those Paperclip APIs exist: on older Paperclip builds it receives a 404, logs a skip, and leaves the stack unchanged.
 
 ## /data Volume Layout
@@ -364,7 +366,7 @@ A healthy server replies with `serverInfo: {"name":"paperclip","version":"0.1.0"
 
 ### Propagation to existing profiles
 
-When you (or an upstream update) add a new MCP server to `hermes-runtime/templates/config.yaml`, the `bootstrap-profiles.sh` entrypoint script idempotently merges any *missing* `mcp_servers.*` entries into every profile config on the next container start — both `HERMES_PROFILES`-listed profiles AND per-role profiles that `profile-sync.mjs` created at runtime under `/data/hermes/profiles/`. Existing entries are never overwritten, so per-profile customisations are preserved. New servers added to the template propagate to every Hermes profile automatically without a manual patch.
+When you (or an upstream update) add a new MCP server to `hermes-runtime/templates/config.yaml`, the `bootstrap-profiles.sh` entrypoint script idempotently merges any *missing* `mcp_servers.*` entries into every profile config on the next container start — both `HERMES_PROFILES`-listed profiles and per-role profiles that `profile-sync.mjs` creates from Paperclip runtime identity metadata under `/data/instances/default/runtimes/hermes/profiles/` (falling back to `/data/hermes/profiles/` for older Paperclip builds). Existing entries are never overwritten, so per-profile customisations are preserved. New servers added to the template propagate to every Hermes profile automatically without a manual patch.
 
 ### Bundled skill: `using-paperclip`
 
@@ -384,7 +386,7 @@ To add your own agent-stack-wide skills, drop a `SKILL.md` (with optional `refer
 
 ## Runtime Patches
 
-The `paperclip` container's entrypoint runs three small Node patches against Paperclip's bundled npm package before starting the server. These rewrite a few lines in place each boot so the agent stack behaves correctly:
+The `paperclip` container's entrypoint runs three small Node patches against the installed Paperclip runtime before starting the server. These rewrite a few lines in place each boot so the agent stack behaves correctly; the patch scripts resolve both the published npm layout and the `/opt/paperclip-src` PR-source layout used on this draft branch.
 
 | Patch | What it changes |
 |---|---|
