@@ -34,6 +34,19 @@ test('compose builds the agent stack from the repository while GHCR deploys are 
   assert.doesNotMatch(compose, /pull_policy:\s*always/);
 });
 
+test('compose uses preview-scoped Traefik routers and services', async () => {
+  const compose = await readFile('compose.yaml', 'utf8');
+
+  assert.match(compose, /traefik\.http\.routers\.\$\{SERVICE_NAME_PAPERCLIP:-paperclip\}\.rule=Host\(`\$\{SERVICE_FQDN_PAPERCLIP:-paperclip\.example\.com\}`\)/);
+  assert.match(compose, /traefik\.http\.services\.\$\{SERVICE_NAME_PAPERCLIP:-paperclip\}\.loadbalancer\.server\.port=3100/);
+  assert.match(compose, /traefik\.http\.middlewares\.\$\{SERVICE_NAME_HERMES:-hermes\}-auth\.basicauth\.users=/);
+  assert.match(compose, /traefik\.http\.routers\.\$\{SERVICE_NAME_HERMES:-hermes\}\.rule=Host\(`\$\{SERVICE_FQDN_HERMES:-hermes\.example\.com\}`\)/);
+  assert.match(compose, /traefik\.http\.services\.\$\{SERVICE_NAME_HERMES:-hermes\}\.loadbalancer\.server\.port=9119/);
+  assert.doesNotMatch(compose, /traefik\.http\.routers\.paperclip\./);
+  assert.doesNotMatch(compose, /traefik\.http\.routers\.hermes\./);
+  assert.doesNotMatch(compose, /traefik\.http\.middlewares\.hermes-auth\./);
+});
+
 test('multi-arch image publish has enough timeout and non-blocking cache export', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
 
