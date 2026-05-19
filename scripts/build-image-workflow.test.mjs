@@ -43,3 +43,12 @@ test('production deploy webhooks only run from main branch image builds', async 
     assert.doesNotMatch(condition, /github\.event_name != 'pull_request'/);
   }
 });
+
+test('GHCR login retries transient registry timeouts', async () => {
+  const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
+
+  assert.match(workflow, /name: Log in to GHCR/);
+  assert.match(workflow, /for attempt in 1 2 3;/);
+  assert.match(workflow, /docker login "\$REGISTRY" -u "\$GHCR_USERNAME" --password-stdin/);
+  assert.doesNotMatch(workflow, /docker\/login-action@v4/);
+});
