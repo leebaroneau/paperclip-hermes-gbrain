@@ -14,11 +14,12 @@ This is a **template deployed to multiple companies simultaneously** from a sing
 | **Leebarone** | `https://coolify.leebarone.dev` | `leebaroneau/paperclip-hermes-gbrain` @ `deploy/leebarone.dev` |
 | **Genvest** | `http://209.38.27.69:8000` | `leebaroneau/paperclip-hermes-gbrain` @ `main` |
 
-All three pull the **same image**: `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest` (rebuilt by `.github/workflows/build-image.yml` on every push to `main`).
+All three production deploys pull the **same image**: `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest` (rebuilt by `.github/workflows/build-image.yml` on every push to `main`). Pull request previews should use a PR/commit-specific image tag, not `latest`.
 
 **Rules for any change you propose:**
 
 - A push to a watched branch redeploys **every Coolify watching that branch — simultaneously**. Treat every commit as a multi-tenant change.
+- PR previews are isolated by image tag. The image workflow publishes `pr-<number>` and `sha-<commit>` tags for pull requests, while `main` alone publishes `latest` and `paperclip-<version>`.
 - Per-company customization lives in **Coolify env vars only** (`PAPERCLIP_HOSTNAME`, `HERMES_HOSTNAME`, `PAPERCLIP_API_KEY`, `PAPERCLIP_DEFAULT_COMPANY_ID`, `HERMES_PROFILES`, `PROFILE_SYNC_ENABLED`, …) — **never** introduce per-brand branches or hard-coded brand specifics in `compose.yaml`.
 - Hermes basic-auth hash in `compose.yaml` is shared across all deploys (same plaintext password, hash is irreversible). Rotating it is a single commit on `main` → all three Coolifies pick it up on next deploy.
 - Data volumes are per-Coolify-app (`<app_uuid>_paperclip-data`). Image swaps preserve data; only `docker volume rm` destroys it.
@@ -58,6 +59,27 @@ The Paperclip MCP server (see below) closes the loop: Hermes-side agents can fil
 - `paperclip` runs Paperclip on port `3100`.
 - `hermes` runs the Hermes dashboard on port `9119`.
 - Both services share the `paperclip-data` volume at `/data`.
+
+## Image Tags and Preview Deployments
+
+The GitHub image workflow publishes different tags for production and pull requests:
+
+| Event | Tags |
+|---|---|
+| Push to `main` | `latest`, `paperclip-<version>`, `sha-<commit>` |
+| Pull request | `pr-<number>`, `sha-<commit>` |
+
+`pr-<number>` is stable for the lifetime of one PR: PR #17 publishes `pr-17`, PR #18 publishes `pr-18`, and every new push to that PR overwrites the same PR tag.
+
+For Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
+
+```dotenv
+AGENT_STACK_IMAGE=ghcr.io/leebaroneau/paperclip-hermes-gbrain:sha-$SOURCE_COMMIT
+```
+
+Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal). Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 automatically pull their own image without manually changing `AGENT_STACK_IMAGE`.
+
+Do not use a shared tag like `:pr` unless you intentionally only ever run one PR preview at a time. A single shared PR tag would be overwritten by whichever PR built last.
 
 ## Paperclip Version
 
