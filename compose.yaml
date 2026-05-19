@@ -46,14 +46,6 @@ services:
       - "3100"
     volumes:
       - paperclip-data:/data
-    labels:
-      - traefik.enable=true
-      - traefik.http.middlewares.gzip.compress=true
-      - traefik.http.routers.${SERVICE_NAME_PAPERCLIP:-paperclip}.entryPoints=http
-      - traefik.http.routers.${SERVICE_NAME_PAPERCLIP:-paperclip}.middlewares=gzip
-      - traefik.http.routers.${SERVICE_NAME_PAPERCLIP:-paperclip}.rule=Host(`${SERVICE_FQDN_PAPERCLIP:-paperclip.example.com}`)
-      - traefik.http.routers.${SERVICE_NAME_PAPERCLIP:-paperclip}.service=${SERVICE_NAME_PAPERCLIP:-paperclip}
-      - traefik.http.services.${SERVICE_NAME_PAPERCLIP:-paperclip}.loadbalancer.server.port=3100
     restart: unless-stopped
 
   hermes:
@@ -81,15 +73,6 @@ services:
       - paperclip-data:/data
     depends_on:
       - paperclip
-    labels:
-      - traefik.enable=true
-      - traefik.http.middlewares.gzip.compress=true
-      - traefik.http.middlewares.${SERVICE_NAME_HERMES:-hermes}-auth.basicauth.users=admin:$$2y$$05$$CQwH/hYpd1Ke70aH1QOmD.HN645xZLHdl1yhR9xyYL5uhGqSOiQf2
-      - traefik.http.routers.${SERVICE_NAME_HERMES:-hermes}.entryPoints=http
-      - traefik.http.routers.${SERVICE_NAME_HERMES:-hermes}.middlewares=gzip,${SERVICE_NAME_HERMES:-hermes}-auth
-      - traefik.http.routers.${SERVICE_NAME_HERMES:-hermes}.rule=Host(`${SERVICE_FQDN_HERMES:-hermes.example.com}`)
-      - traefik.http.routers.${SERVICE_NAME_HERMES:-hermes}.service=${SERVICE_NAME_HERMES:-hermes}
-      - traefik.http.services.${SERVICE_NAME_HERMES:-hermes}.loadbalancer.server.port=9119
     restart: unless-stopped
 
 volumes:
