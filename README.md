@@ -72,7 +72,7 @@ The GitHub image workflow publishes production images automatically from `main`.
 
 The workflow publishes to `ghcr.io/leebaroneau/template-agent`, matching the GitHub repository name. Existing Coolify apps should consume this package for both production and preview deployments.
 
-Main branch image builds always publish the full multi-arch `linux/amd64,linux/arm64` image. Manual branch builds default to `linux/arm64` for local Coolify previews on Colima. Choose `linux/amd64,linux/arm64` manually only when a branch preview needs production parity.
+Main branch image builds always publish the full multi-arch `linux/amd64,linux/arm64` image on GitHub's standard x64 Ubuntu runner. Manual branch builds default to `linux/arm64` and run on GitHub's native `ubuntu-24.04-arm` runner for local Coolify previews on Colima. Choose `linux/amd64,linux/arm64` manually only when a branch preview needs production parity.
 
 To publish a preview image for a branch, dispatch the workflow against that branch:
 

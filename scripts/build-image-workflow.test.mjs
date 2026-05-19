@@ -7,10 +7,11 @@ test('pull request image builds are manual and default to arm64 previews', async
 
   assert.doesNotMatch(workflow, /^\s+pull_request:/m);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /runs-on: \$\{\{ github\.ref == 'refs\/heads\/main' && 'ubuntu-latest' \|\| 'ubuntu-24\.04-arm' \}\}/);
   assert.match(workflow, /platforms:[\s\S]*default: linux\/arm64/);
   assert.match(workflow, /platforms="\$\{\{ inputs\.platforms \|\| 'linux\/arm64' \}\}"/);
   assert.match(workflow, /github\.ref.*refs\/heads\/main[\s\S]*platforms="linux\/amd64,linux\/arm64"/);
-  assert.match(workflow, /docker\/setup-qemu-action@v4[\s\S]*platforms: arm64/);
+  assert.match(workflow, /docker\/setup-qemu-action@v4[\s\S]*platforms: all/);
 });
 
 test('workflow and compose defaults publish and pull the template-agent image package', async () => {
