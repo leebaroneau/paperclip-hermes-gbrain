@@ -31,9 +31,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # Keep the GHCR package stable for existing Coolify apps even if the GitHub
-  # repository is renamed or transferred.
-  IMAGE_NAME: leebaroneau/paperclip-hermes-gbrain
+  IMAGE_NAME: leebaroneau/template-agent
 
 jobs:
   build:

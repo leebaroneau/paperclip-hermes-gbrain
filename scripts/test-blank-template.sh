@@ -34,7 +34,7 @@ for file in \
   check_absent "$file" 'hermes-ui|HERMES_UI' "service should be named hermes"
   # \bleebarone\b uses word boundaries so it catches "leebarone" and
   # "leebarone.dev" but NOT the shared image registry user "leebaroneau"
-  # in `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest`, which is the
+  # in `ghcr.io/leebaroneau/template-agent:latest`, which is the
   # canonical image all three deployments pull from (see README).
   check_absent "$file" 'Lee'\''s|\bleebarone\b|haverford|alx-finance|paperclip\.leebarone\.dev|hermes\.leebarone\.dev|HERMES_BRIDGE_TOKEN' "template should not include live client or deployment values"
 done

@@ -11,10 +11,10 @@ This is a **template deployed to multiple companies simultaneously** from a sing
 | Deploy | Coolify host | Watches |
 | --- | --- | --- |
 | **ALX Finance** | `https://coolify.alxfinance.com.au` | `ALX-Finance/paperclip-hermes-gbrain` @ `main` |
-| **Leebarone** | `https://coolify.leebarone.dev` | `leebaroneau/paperclip-hermes-gbrain` @ `deploy/leebarone.dev` |
-| **Genvest** | `http://209.38.27.69:8000` | `leebaroneau/paperclip-hermes-gbrain` @ `main` |
+| **Leebarone** | `https://coolify.leebarone.dev` | `leebaroneau/template-agent` @ `deploy/leebarone.dev` |
+| **Genvest** | `http://209.38.27.69:8000` | `leebaroneau/template-agent` @ `main` |
 
-All three production deploys pull the **same image**: `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest` (rebuilt by `.github/workflows/build-image.yml` on every push to `main`). Pull request previews should use a PR/commit-specific image tag, not `latest`.
+All three production deploys pull the **same image**: `ghcr.io/leebaroneau/template-agent:latest` (rebuilt by `.github/workflows/build-image.yml` on every push to `main`). Pull request previews should use a PR/commit-specific image tag, not `latest`.
 
 **Rules for any change you propose:**
 
@@ -69,7 +69,7 @@ The GitHub image workflow publishes different tags for production and pull reque
 | Push to `main` | `latest`, `paperclip-<version>`, `sha-<commit>` |
 | Pull request | `pr-<number>`, `sha-<commit>` |
 
-The workflow intentionally publishes to `ghcr.io/leebaroneau/paperclip-hermes-gbrain` even if the GitHub repository is renamed. Existing Coolify apps should keep consuming the stable image package rather than a repo-name-derived package.
+The workflow publishes to `ghcr.io/leebaroneau/template-agent`, matching the GitHub repository name. Existing Coolify apps should consume this package for both production and preview deployments.
 
 `pr-<number>` is stable for the lifetime of one PR: PR #17 publishes `pr-17`, PR #18 publishes `pr-18`, and every new push to that PR overwrites the same PR tag.
 
@@ -78,7 +78,7 @@ Pull request image builds publish the same multi-arch `linux/amd64,linux/arm64` 
 For Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
 
 ```dotenv
-AGENT_STACK_IMAGE=ghcr.io/leebaroneau/paperclip-hermes-gbrain:sha-$SOURCE_COMMIT
+AGENT_STACK_IMAGE=ghcr.io/leebaroneau/template-agent:sha-$SOURCE_COMMIT
 ```
 
 Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal). Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 automatically pull their own image without manually changing `AGENT_STACK_IMAGE`.
@@ -200,7 +200,7 @@ After the stack is deployed (locally or via Coolify) and the containers are runn
 
 ## Coolify Setup
 
-1. **Create a new Docker Compose app** in Coolify pointing at this GitHub repo (`leebaroneau/paperclip-hermes-gbrain`, branch `main`, base directory `/`).
+1. **Create a new Docker Compose app** in Coolify pointing at this GitHub repo (`leebaroneau/template-agent`, branch `main`, base directory `/`).
 2. **Wire up a GitHub source that can read this repo** (skip if the repo is public). Coolify's "Public GitHub" source can only clone public repos. For a private template, attach the app to a GitHub App installation that includes this repo:
    - In Coolify: app → *Source* → pick (or create) a GitHub App installation, and ensure the installation is granted access to this repo on GitHub.
    - Symptom of missing this step: deploy fails in ~0 seconds with `GitHub API call failed: Not Found` in the logs.
@@ -228,7 +228,7 @@ After the stack is deployed (locally or via Coolify) and the containers are runn
 
 ### Auto-deploy from `main`
 
-[`.github/workflows/build-image.yml`](.github/workflows/build-image.yml) rebuilds and pushes `ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest` on every push to `main` that touches `paperclip/**`, `hermes-runtime/**`, or the workflow file itself. After the image push the workflow makes three HTTP calls to `/api/v1/deploy?uuid=<app-uuid>` on each Coolify (ALX, Leebarone, Genvest) so they pull the new image and recreate containers.
+[`.github/workflows/build-image.yml`](.github/workflows/build-image.yml) rebuilds and pushes `ghcr.io/leebaroneau/template-agent:latest` on every push to `main` that touches `paperclip/**`, `hermes-runtime/**`, or the workflow file itself. After the image push the workflow makes three HTTP calls to `/api/v1/deploy?uuid=<app-uuid>` on each Coolify (ALX, Leebarone, Genvest) so they pull the new image and recreate containers.
 
 Per-deployment credentials live in this repo's GitHub Actions config (Settings → Secrets and variables → Actions):
 
@@ -259,7 +259,7 @@ This is a `workflow_dispatch` trigger that passes `force=true` through to all th
 **Pull-race caveat:** Coolify's deploy recreates containers but does not always `docker pull` first — it can reuse the locally-cached `:latest`, which on a stuck deployment is the old image. If `force=true` recreates the container but the revision label still points at the old SHA, prime the local cache before retrying:
 
 ```bash
-ssh <host> docker pull ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest
+ssh <host> docker pull ghcr.io/leebaroneau/template-agent:latest
 gh workflow run build-image.yml -f force=true
 ```
 

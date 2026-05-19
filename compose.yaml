@@ -1,6 +1,6 @@
 services:
   paperclip:
-    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest}
+    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
     # Always re-pull on `docker compose up` / Coolify recreate. Coolify v4's
     # /api/v1/deploy?force=true does not pull (issue coollabsio/coolify#5318),
     # so we make the docker-compose layer enforce freshness directly. Safe
@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
 
   hermes:
-    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/paperclip-hermes-gbrain:latest}
+    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
     pull_policy: always
     entrypoint: ["/usr/bin/tini", "--", "/opt/paperclip/hermes-entrypoint.sh"]
     environment:
