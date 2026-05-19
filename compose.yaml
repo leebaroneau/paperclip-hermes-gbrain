@@ -1,12 +1,12 @@
+x-agent-stack-build: &agent-stack-build
+  image: template-agent:${SOURCE_COMMIT:-local}
+  build:
+    context: .
+    dockerfile: paperclip/Dockerfile
+
 services:
   paperclip:
-    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
-    # Always re-pull on `docker compose up` / Coolify recreate. Coolify v4's
-    # /api/v1/deploy?force=true does not pull (issue coollabsio/coolify#5318),
-    # so we make the docker-compose layer enforce freshness directly. Safe
-    # here because both services reference a registry image (not a local
-    # build), so coollabsio/coolify#5256's revert reason doesn't apply.
-    pull_policy: always
+    <<: *agent-stack-build
     environment:
       PAPERCLIP_HOME: /data
       PAPERCLIP_TELEMETRY_DISABLED: ${PAPERCLIP_TELEMETRY_DISABLED:-1}
@@ -57,8 +57,7 @@ services:
     restart: unless-stopped
 
   hermes:
-    image: ${AGENT_STACK_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
-    pull_policy: always
+    <<: *agent-stack-build
     entrypoint: ["/usr/bin/tini", "--", "/opt/paperclip/hermes-entrypoint.sh"]
     environment:
       HERMES_DATA_ROOT: /data/hermes

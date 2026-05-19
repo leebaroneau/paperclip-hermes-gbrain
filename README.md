@@ -62,7 +62,9 @@ The Paperclip MCP server (see below) closes the loop: Hermes-side agents can fil
 
 ## Image Tags and Preview Deployments
 
-The GitHub image workflow publishes production images automatically from `main`. Preview images are manual so normal pull requests stay fast:
+`compose.yaml` currently builds the Paperclip/Hermes stack directly from the checked-out repository and tags it as `template-agent:${SOURCE_COMMIT:-local}`. This keeps PR previews testable while GHCR publishing is paused.
+
+The GitHub image workflow can still publish production images when re-enabled. Preview images are manual so normal pull requests stay fast:
 
 | Event | Tags |
 |---|---|
@@ -70,7 +72,7 @@ The GitHub image workflow publishes production images automatically from `main`.
 | Manual dispatch on a non-`main` branch | `sha-<commit>` |
 | Pull request | No image is published automatically |
 
-The workflow publishes to `ghcr.io/leebaroneau/template-agent`, matching the GitHub repository name. Existing Coolify apps should consume this package for both production and preview deployments.
+The workflow publishes to `ghcr.io/leebaroneau/template-agent`, matching the GitHub repository name. To return deployments to registry pulls later, restore the compose image reference and `pull_policy` alongside the workflow.
 
 Main branch image builds always publish the full multi-arch `linux/amd64,linux/arm64` image on GitHub's standard x64 Ubuntu runner. Manual branch builds default to `linux/arm64` and run on GitHub's native `ubuntu-24.04-arm` runner for local Coolify previews on Colima. Choose `linux/amd64,linux/arm64` manually only when a branch preview needs production parity.
 
@@ -80,13 +82,13 @@ To publish a preview image for a branch, dispatch the workflow against that bran
 gh workflow run build-image.yml --ref <branch> -f platforms=linux/arm64
 ```
 
-For Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
+For registry-backed Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
 
 ```dotenv
 AGENT_STACK_IMAGE=ghcr.io/leebaroneau/template-agent:sha-$SOURCE_COMMIT
 ```
 
-Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal). Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 pull their own image without manually changing `AGENT_STACK_IMAGE`. If a PR gets new commits, dispatch the image workflow again before redeploying that preview.
+Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal) only after registry-backed previews are turned back on. Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 pull their own image without manually changing `AGENT_STACK_IMAGE`. If a PR gets new commits, dispatch the image workflow again before redeploying that preview.
 
 Paperclip adopts Coolify's preview `SERVICE_URL_PAPERCLIP` and `SERVICE_FQDN_PAPERCLIP` at container start for PR previews, so preview hostnames are added to `PAPERCLIP_ALLOWED_HOSTNAMES` automatically. For Cloudflare Universal SSL, use one-label preview hostnames like `paperclip-pr-17.example.com`; nested names like `17.paperclip.example.com` usually require an additional wildcard certificate.
 

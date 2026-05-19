@@ -14,14 +14,22 @@ test('pull request image builds are manual and default to arm64 previews', async
   assert.match(workflow, /docker\/setup-qemu-action@v4[\s\S]*platforms: all/);
 });
 
-test('workflow and compose defaults publish and pull the template-agent image package', async () => {
+test('workflow publishes the template-agent image package without hard-coded compose pulls', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
   const compose = await readFile('compose.yaml', 'utf8');
 
   assert.match(workflow, /IMAGE_NAME: leebaroneau\/template-agent/);
   assert.doesNotMatch(workflow, /leebaroneau\/paperclip-hermes-gbrain/);
-  assert.match(compose, /ghcr\.io\/leebaroneau\/template-agent:latest/);
+  assert.doesNotMatch(compose, /ghcr\.io\/leebaroneau\/template-agent:latest/);
   assert.doesNotMatch(compose, /ghcr\.io\/leebaroneau\/paperclip-hermes-gbrain:latest/);
+});
+
+test('compose builds the agent stack from the repository while GHCR deploys are paused', async () => {
+  const compose = await readFile('compose.yaml', 'utf8');
+
+  assert.match(compose, /x-agent-stack-build:[\s\S]*image: template-agent:\$\{SOURCE_COMMIT:-local\}/);
+  assert.match(compose, /build:[\s\S]*context: \.[\s\S]*dockerfile: paperclip\/Dockerfile/);
+  assert.doesNotMatch(compose, /pull_policy:\s*always/);
 });
 
 test('multi-arch image publish has enough timeout and non-blocking cache export', async () => {
