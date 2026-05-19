@@ -63,14 +63,9 @@ jobs:
 
       - name: Select image platforms
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "IMAGE_PLATFORMS=linux/amd64" >> "$GITHUB_ENV"
-          else
-            echo "IMAGE_PLATFORMS=linux/amd64,linux/arm64" >> "$GITHUB_ENV"
-          fi
+          echo "IMAGE_PLATFORMS=linux/amd64,linux/arm64" >> "$GITHUB_ENV"
 
       - uses: docker/setup-qemu-action@v4
-        if: github.event_name != 'pull_request'
         with:
           platforms: arm64
 

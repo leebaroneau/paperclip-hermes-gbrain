@@ -73,7 +73,7 @@ The workflow intentionally publishes to `ghcr.io/leebaroneau/paperclip-hermes-gb
 
 `pr-<number>` is stable for the lifetime of one PR: PR #17 publishes `pr-17`, PR #18 publishes `pr-18`, and every new push to that PR overwrites the same PR tag.
 
-Pull request image builds publish `linux/amd64` only, which matches the Coolify preview hosts and keeps source-build preview images fast. Pushes to `main` and manual workflow dispatches continue publishing the multi-arch `linux/amd64,linux/arm64` image.
+Pull request image builds publish the same multi-arch `linux/amd64,linux/arm64` image as `main`, because local Coolify preview deployments may run on Colima ARM64 while hosted runners and production hosts may be AMD64.
 
 For Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
 
