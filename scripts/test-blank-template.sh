@@ -19,6 +19,18 @@ check_absent() {
   rm -f /tmp/paperclip-hermes-gbrain-blank-matches.$$
 }
 
+check_present() {
+  local file="$1"
+  local pattern="$2"
+  local description="$3"
+
+  if ! grep -nE "$pattern" "$file" >/tmp/paperclip-hermes-gbrain-present-matches.$$ 2>/dev/null; then
+    echo "Missing expected template content in $file: $description" >&2
+    failed=1
+  fi
+  rm -f /tmp/paperclip-hermes-gbrain-present-matches.$$
+}
+
 for file in \
   ".env.example" \
   ".env.coolify.example" \
@@ -84,6 +96,13 @@ if ! grep -nE '/data/agent-stack/important-information-index\.md' paperclip/entr
   echo "Paperclip entrypoint should seed the important information index into /data." >&2
   failed=1
 fi
+
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '^name: use-100m-framework$' "bundled 100m application skill should exist"
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '100m-field-learning' "100m skill should define field-learning proposal capture"
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" 'Do not edit shared framework doctrine directly' "company profiles should not mutate shared doctrine"
+check_present "paperclip/learning-protocol.md" 'type: 100m-field-learning' "canonical learning protocol should define 100m field-learning pages"
+check_present "hermes-runtime/templates/LEARNING_PROTOCOL.md" 'type: 100m-field-learning' "profile fallback learning protocol should define 100m field-learning pages"
+check_present "README.md" '100M Framework Learning Loop' "README should link the framework learning loop operations doc"
 
 if [[ "$failed" -ne 0 ]]; then
   exit 1

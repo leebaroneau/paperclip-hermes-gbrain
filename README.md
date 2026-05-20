@@ -433,6 +433,19 @@ AGENTS.md, RESOLVER.md, gbrain.yml
 
 User-added skills you drop into `/data/gbrain/default/skills/` after the stack is up are picked up by the next profile-sync iteration. The default GBrain database and knowledge pages are NOT copied — memory stays isolated per role.
 
+## 100M Framework Learning Loop
+
+The bundled `use-100m-framework` skill is installed into every Hermes profile
+through the existing `hermes-runtime/skills` propagation path. Bootstrap and
+profile-sync symlink the skill into each profile's `skills/agent-stack/`
+directory, so new Paperclip-managed profiles pick it up without separate setup.
+
+Company agents use the skill to apply the shared `$100M` framework and write
+sanitized `100m-field-learning` proposals into their role-specific GBrain homes.
+Promotion is centralized: company profiles do not edit shared framework doctrine
+directly. See [docs/100m-framework-learning-loop.md](docs/100m-framework-learning-loop.md)
+for the pull model, promotion classes, and personal-Hermes curator cron.
+
 ## Profile Sync & Org Chart
 
 The `paperclip` container can run an embedded reconciliation loop that mirrors Paperclip's roster into per-role Hermes profiles and GBrain homes. Enable it in env:

@@ -66,3 +66,66 @@ content.
 
 If you write or update GBrain pages, mention the page slug in the Paperclip issue
 comment or final answer.
+
+## 6. Capture `$100M` Field Learnings
+
+When a task applies the `$100M` framework and produces a reusable improvement,
+write a sanitized proposal to your role-specific GBrain. Use this only for
+lessons that may improve shared doctrine across companies.
+
+Slug shape:
+
+```text
+inbox/100m-field-learning/<YYYY-MM-DD>-<company-or-profile-slug>-<short-topic>
+```
+
+Page schema:
+
+```markdown
+---
+title: "<short sanitized title>"
+type: 100m-field-learning
+framework: 100m
+promotion_class: clarity
+confidence: medium
+source_company_redacted: true
+---
+
+# <Short Sanitized Title>
+
+## Proposed Improvement
+
+State the reusable improvement in one paragraph.
+
+## Promotion Class
+
+Use exactly one: clarity, example, pattern, strategic.
+
+## Evidence
+
+- [Source: Paperclip issue <identifier>, <YYYY-MM-DD>]
+- [Source: sanitized company GBrain page <slug>, <YYYY-MM-DD>]
+
+## Why It Generalizes
+
+Explain why this applies beyond one company.
+
+## Why It May Not Generalize
+
+Name the limits, missing data, or company-specific conditions.
+
+## Suggested Framework Target
+
+Name the likely target page, workflow, scorecard, or concept.
+```
+
+Promotion classes:
+
+- `clarity`: wording, naming, navigation, and explanation improvements. Curator may auto-promote when source-backed and client-neutral.
+- `example`: sanitized examples that illustrate existing doctrine without changing the doctrine. Curator may auto-promote when source-backed and client-neutral.
+- `pattern`: repeated finding across companies that may add or reshape a reusable heuristic. Requires Lee review.
+- `strategic`: changes to scoring, sequencing, diagnosis, doctrine, or operating policy. Requires Lee review.
+
+Never include client names, private metrics, customer names, secrets, raw
+transcripts, or runtime database content. Do not edit shared framework doctrine
+from a company profile.
