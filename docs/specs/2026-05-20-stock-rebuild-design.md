@@ -154,7 +154,7 @@ template-agent/
 
 ### Blank-slate rule
 
-The rebuild branch starts with an **empty working tree**:
+The rebuild branch starts with an **empty working tree** so implementation work is not influenced by the old local patch tree:
 
 ```
 git checkout -b epic/<#>-stock-rebuild
@@ -163,6 +163,8 @@ git commit -m "chore: blank slate for stock rebuild"
 ```
 
 `.git/` history is preserved (so PR/issue references, branch protection, and pipeline-core wiring survive), but every file in the working tree is removed in commit #1. Files are added back in subsequent commits **only from upstream-aligned patterns** — i.e., what NousResearch's Hermes Dockerfile + docker-compose do, what hermes-paperclip-adapter's package.json + src/ look like, what GBrain's bunfig + setup expects. The pipeline-core caller workflows, `.github/pipeline-config.yml`, `labels.yml`, etc. are recreated from the canonical pipeline-core template.
+
+This is **not** a greenfield rewrite. It is a clean-room local branch that rebuilds the template from existing, maintained upstream implementations wherever they exist. Default to upstream docs, upstream Dockerfiles, upstream config shape, and public APIs. Write new local code only for the narrow `agent-sync` bridge where no upstream component already owns the behavior.
 
 It is OK to **read** the old `paperclip/`, `hermes-runtime/`, and `scripts/` directories for context — understanding what the old integration was trying to achieve helps avoid re-discovering the same problems. What is NOT OK is **carrying patterns forward**: if the old code monkey-patched something, the new code must instead achieve the same outcome via env vars, public APIs, or an upstream PR. If the old code can't be replaced cleanly, the feature is dropped from v1 rather than re-customised.
 
