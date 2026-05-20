@@ -20,7 +20,7 @@ The current `template-agent` image carries six monkey-patch scripts (`patch-pape
 
 On 2026-05-20 a switch from `openai-codex` to `anthropic` on the Genvest droplet exposed a chain of failures: lazy-deps install loops, post-env-load subprocess deaths, and silent dispatch hangs. Debugging the patch chain in place is open-ended; rebuilding from upstream is bounded.
 
-The goal is one stock image, two Coolify stacks (Haverford new, Genvest existing), zero monkey-patches.
+The goal is one stock image, two Coolify stacks (Haverford new, Genvest existing), zero monkey-patches. A secondary motivation is **upgradability**: by following the three upstream repos' published patterns directly (Hermes, hermes-paperclip-adapter, GBrain), future version bumps are documented by upstream changelogs and don't require us to re-port custom patches against new releases. The smaller our local surface area, the easier each upgrade.
 
 ## Goals
 
@@ -141,9 +141,14 @@ git rm -rf .
 git commit -m "chore: blank slate for stock rebuild"
 ```
 
-`.git/` history is preserved (so PR/issue references, branch protection, and pipeline-core wiring survive), but every file in the working tree is removed in commit #1. Files are added back in subsequent commits **only from this spec** — never copied from prior commits, never read from the old `paperclip/` or `hermes-runtime/` directories for "how it used to work." If a file is needed (pipeline-core caller workflows, `.github/pipeline-config.yml`, `labels.yml`, etc.), it is recreated from the canonical pipeline-core template, not from the old repo's history.
+`.git/` history is preserved (so PR/issue references, branch protection, and pipeline-core wiring survive), but every file in the working tree is removed in commit #1. Files are added back in subsequent commits **only from upstream-aligned patterns** — i.e., what NousResearch's Hermes Dockerfile + docker-compose do, what hermes-paperclip-adapter's package.json + src/ look like, what GBrain's bunfig + setup expects. The pipeline-core caller workflows, `.github/pipeline-config.yml`, `labels.yml`, etc. are recreated from the canonical pipeline-core template.
 
-This rule exists because the old setup encoded `openai-codex`-specific assumptions across multiple files (patches, entrypoints, env defaults). Reusing any of it risks dragging those assumptions forward by accident. Anything that "looks useful" in the old tree is presumed contaminated unless the spec explicitly calls for it.
+It is OK to **read** the old `paperclip/`, `hermes-runtime/`, and `scripts/` directories for context — understanding what the old integration was trying to achieve helps avoid re-discovering the same problems. What is NOT OK is **carrying patterns forward**: if the old code monkey-patched something, the new code must instead achieve the same outcome via env vars, public APIs, or an upstream PR. If the old code can't be replaced cleanly, the feature is dropped from v1 rather than re-customised.
+
+Two reasons the rule is this strict:
+
+1. The old setup encoded `openai-codex`-specific assumptions across multiple files (patches, entrypoints, env defaults). Reusing patterns from it risks dragging those assumptions forward by accident.
+2. The whole point is **upgradability**. Every customisation we keep is a future re-port cost. The cleanest test of "have we customised?" is "does upstream's changelog tell us everything we need to know for the next version bump?" If yes, we're aligned. If no, we still have local code that needs review on each upgrade.
 
 ### Files that get recreated (deliberate inclusions)
 
