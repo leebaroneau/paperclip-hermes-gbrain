@@ -70,6 +70,7 @@ node /opt/paperclip/patch-hermes-adapter-env.mjs
 node /opt/paperclip/patch-hermes-adapter-skills-home.mjs
 node /opt/paperclip/patch-paperclip-hermes-defaults.mjs patch
 node /opt/paperclip/patch-paperclip-company-prefix.mjs
+node /opt/paperclip/patch-invite-auth-flow.mjs
 node /opt/paperclip/repair-paperclip-config.mjs
 
 if [[ ! -f /data/instances/default/config.json ]]; then
