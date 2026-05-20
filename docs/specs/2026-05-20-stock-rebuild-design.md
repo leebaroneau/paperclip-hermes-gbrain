@@ -31,6 +31,12 @@ The goal is one stock image, two Coolify stacks (Haverford new, Genvest existing
 - Genvest keeps its existing Coolify UUID and named volume. NEVER DELETE per hard rule. Only the image content and `.env` change.
 - Fresh database on Genvest before restore. Pre-cutover backup on Genvest lands on the host outside any Docker volume. Restored Paperclip agents run through the stock default Hermes profile; old Hermes profile dirs are backed up for rollback only, not restored into the rebuilt stack.
 
+### Canonical template rule
+
+`leebaroneau/template-agent` is the canonical golden template. New orgs deploy from it directly when access permits. Org-level duplicates are allowed only for access-control, billing, compliance, or ownership requirements; they must stay mechanically equivalent to the golden template and must not contain org-specific code changes unless an intentional divergence is documented and approved.
+
+Operationally, customisation belongs in deployment configuration, environment variables, secrets, state volumes, and Paperclip/Hermes runtime data — not in copied template source. If an org copy diverges, record the reason, owner, and upgrade burden in that repo before merging the divergence.
+
 ## Non-goals
 
 - No work on the broken kanban-dispatch symptom directly. The rebuild is the fix.
