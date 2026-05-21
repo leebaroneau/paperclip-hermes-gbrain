@@ -243,10 +243,13 @@ PROFILE_SYNC_ENABLED=1
 PROFILE_SYNC_INTERVAL_SEC=60
 PROFILE_SYNC_DELETE_MODE=archive
 PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=1
+PROFILE_SYNC_HERMES_MODEL_MODE=inherit
 PAPERCLIP_PROFILE_SYNC_API_KEY=<pcp_board_...>   # same key as PAPERCLIP_API_KEY is fine
 ```
 
 Profile sync also grants `canAssignTasks` to active agents that have direct reports, preserving their existing `canCreateAgents` setting. Disable with `PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=0` if a deployment wants CEO-only task assignment.
+
+By default, profile sync writes each managed `hermes_local` agent's `adapterConfig.model` / `provider` from that role's Hermes profile config (`PROFILE_SYNC_HERMES_MODEL_MODE=inherit`). Set `PROFILE_SYNC_HERMES_MODEL_MODE=paperclip-default` when you want the Paperclip UI to show `Model default` for all managed Hermes agents and let the Hermes profile choose the model at execution time. In that mode, profile sync explicitly clears stale `model` and `provider` values on every managed Hermes agent.
 
 Grants are **tracked in `/data/agent-stack/profile-sync/manifest.json` under `permissionedAgents`** and **revoked on a future cycle if the agent loses qualification** (e.g. its last direct report leaves). CEOs (`agent.role === 'ceo'`) are skipped in both grant and revoke paths because Paperclip surfaces their `canAssignTasks` via the role-derived `taskAssignSource: ceo_role` permission — the explicit-grant lifecycle is for non-CEO managers. Agents granted before this manifest tracking shipped are *not* eligible for the steady-state revoke; see [Cleaning up historical canAssignTasks drift](#cleaning-up-historical-canassigntasks-drift) below for the one-shot cleanup tool.
 
