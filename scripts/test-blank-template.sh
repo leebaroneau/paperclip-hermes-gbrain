@@ -98,6 +98,8 @@ fi
 check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '^name: use-100m-framework$' "bundled 100m application skill should exist"
 check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '100m-field-learning' "100m skill should define field-learning proposal capture"
 check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" 'Do not edit shared framework doctrine directly' "company profiles should not mutate shared doctrine"
+check_present "hermes-runtime/skills/gbrain/SKILL.md" '^name: gbrain$' "bundled GBrain skill should exist"
+check_present "hermes-runtime/skills/gbrain/SKILL.md" 'GBRAIN_HOME' "GBrain skill should keep memory role-scoped"
 check_present "paperclip/learning-protocol.md" 'type: 100m-field-learning' "canonical learning protocol should define 100m field-learning pages"
 check_present "hermes-runtime/templates/LEARNING_PROTOCOL.md" 'type: 100m-field-learning' "profile fallback learning protocol should define 100m field-learning pages"
 check_present "README.md" '100M Framework Learning Loop' "README should link the framework learning loop operations doc"

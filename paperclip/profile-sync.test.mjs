@@ -107,6 +107,80 @@ test('buildManagedAgentPayload persists desired Paperclip skills in adapter conf
   });
 });
 
+test('reconcileAgents creates missing default company skills before syncing desired skills', async () => {
+  const currentSkills = [
+    { key: 'paperclipai/paperclip/paperclip', slug: 'paperclip', name: 'paperclip' },
+    { key: 'company/gbrain', slug: 'gbrain', name: 'GBrain' },
+  ];
+  const createdSkills = [];
+  const patched = [];
+
+  await reconcileAgents({
+    companies: [{ id: 'co_1', name: 'Acme' }],
+    listAgents: async () => [
+      { id: 'a_1', name: 'Researcher', adapterType: 'hermes_local', adapterConfig: {}, metadata: {} },
+    ],
+    listCompanySkills: async () => currentSkills,
+    ensureCompanySkill: async (_companyId, skill) => {
+      createdSkills.push(skill);
+      const created = { key: `company/${skill.slug}`, slug: skill.slug, name: skill.name };
+      currentSkills.push(created);
+      return created;
+    },
+    patchAgent: async (_agentId, payload) => {
+      patched.push(payload);
+      return payload;
+    },
+    ensureHomes: async ({ profileSlug }) => ({
+      hermesHome: `/tmp/hermes/${profileSlug}`,
+      gbrainHome: `/tmp/gbrain/${profileSlug}`,
+      modelConfig: {},
+    }),
+    writeOrgMirror: async () => {},
+    defaultCompanySkills: [
+      { slug: 'gbrain', name: 'GBrain', markdown: '# GBrain\n' },
+      { slug: 'use-100m-framework', name: 'Use 100M Framework', markdown: '# Use 100M\n' },
+    ],
+  });
+
+  assert.deepEqual(createdSkills.map((skill) => skill.slug), ['use-100m-framework']);
+  assert.deepEqual(
+    patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
+    ['paperclipai/paperclip/paperclip', 'company/gbrain', 'company/use-100m-framework'],
+  );
+});
+
+test('reconcileAgents leaves existing default company skills untouched', async () => {
+  const currentSkills = [
+    {
+      key: 'company/gbrain',
+      slug: 'gbrain',
+      name: 'Custom GBrain',
+      markdown: '# Locally customised\n',
+    },
+  ];
+  const createdSkills = [];
+
+  await reconcileAgents({
+    companies: [{ id: 'co_1', name: 'Acme' }],
+    listAgents: async () => [],
+    listCompanySkills: async () => currentSkills,
+    ensureCompanySkill: async (_companyId, skill) => {
+      createdSkills.push(skill);
+      return { key: `company/${skill.slug}`, slug: skill.slug, name: skill.name };
+    },
+    patchAgent: async () => {
+      throw new Error('patchAgent should not be called');
+    },
+    writeOrgMirror: async () => {},
+    defaultCompanySkills: [
+      { slug: 'gbrain', name: 'GBrain', markdown: '# GBrain\n' },
+    ],
+  });
+
+  assert.deepEqual(createdSkills, []);
+});
+
 test('buildManagedAgentPayload inherits Hermes model settings from the profile config', () => {
   const payload = buildManagedAgentPayload({
     agent: {
@@ -1035,6 +1109,12 @@ test('reconcileAgents archives managed agents returned as terminated', async () 
 test('profile-sync CLI one-shot provisions homes and patches Paperclip API', async () => {
   const root = await mkdtemp(join(tmpdir(), 'profile-sync-cli-'));
   const patched = [];
+  const createdSkills = [];
+  const companySkills = [
+    { key: 'paperclipai/paperclip/research', slug: 'research', name: 'research' },
+    { slug: 'copywriting', name: 'copywriting' },
+    { name: 'research' },
+  ];
   const server = createServer(async (request, response) => {
     try {
       if (request.method === 'GET' && request.url === '/api/companies') {
@@ -1048,13 +1128,19 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       }
 
       if (request.method === 'GET' && request.url === '/api/companies/co_1/skills') {
-        return json(response, {
-          skills: [
-            { key: 'research' },
-            { slug: 'copywriting' },
-            { name: 'research' },
-          ],
-        });
+        return json(response, { skills: companySkills });
+      }
+
+      if (request.method === 'POST' && request.url === '/api/companies/co_1/skills') {
+        const body = await readRequestJson(request);
+        createdSkills.push(body);
+        const created = {
+          key: `company/${body.slug}`,
+          slug: body.slug,
+          name: body.name,
+        };
+        companySkills.push(created);
+        return json(response, created);
       }
 
       if (request.method === 'PATCH' && request.url === '/api/agents/a_1') {
@@ -1086,6 +1172,7 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       ORG_MIRROR_ROOT: join(root, 'agent-stack'),
       PROFILE_SYNC_MANIFEST_PATH: manifestPath,
       PROFILE_SYNC_TEMPLATE_DIR: join(process.cwd(), 'hermes-runtime/templates'),
+      PROFILE_SYNC_DEFAULT_COMPANY_SKILL_SOURCE_DIR: join(process.cwd(), 'hermes-runtime/skills'),
       PROFILE_SYNC_HERMES_MODEL_MODE: 'paperclip-default',
     });
 
@@ -1103,8 +1190,17 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
     );
     assert.deepEqual(
       patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
-      ['research', 'copywriting'],
+      [
+        'paperclipai/paperclip/research',
+        'copywriting',
+        'research',
+        'company/gbrain',
+        'company/use-100m-framework',
+      ],
     );
+    assert.deepEqual(createdSkills.map((skill) => skill.slug), ['gbrain', 'use-100m-framework']);
+    assert.match(createdSkills[0].markdown, /^---\nname: gbrain/m);
+    assert.match(createdSkills[1].markdown, /^---\nname: use-100m-framework/m);
     assert.equal(patched[0].adapterConfig.model, null);
     assert.equal(patched[0].adapterConfig.provider, null);
     await stat(join(root, 'hermes/profiles/acme-inc-researcher/config.yaml'));
