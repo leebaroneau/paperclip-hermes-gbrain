@@ -109,6 +109,34 @@ test('buildManagedAgentPayload inherits Hermes model settings from the profile c
   assert.equal(payload.adapterConfig.provider, 'openai-codex');
 });
 
+test('buildManagedAgentPayload can keep managed agents on Paperclip model default', () => {
+  const payload = buildManagedAgentPayload({
+    agent: {
+      name: 'CEO',
+      adapterConfig: {
+        model: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        timeoutSec: 60,
+        env: {
+          KEEP_ME: '1',
+        },
+      },
+      metadata: {},
+    },
+    companyName: 'Acme',
+    hermesModelConfig: {
+      model: 'gpt-5.5',
+      provider: 'openai-codex',
+    },
+    hermesModelMode: 'paperclip-default',
+  });
+
+  assert.equal(payload.adapterConfig.model, null);
+  assert.equal(payload.adapterConfig.provider, null);
+  assert.equal(payload.adapterConfig.timeoutSec, 60);
+  assert.equal(payload.adapterConfig.env.KEEP_ME, '1');
+});
+
 test('buildManagedAgentPayload adds shared operating pointers to capabilities', () => {
   const payload = buildManagedAgentPayload({
     agent: {
@@ -516,6 +544,51 @@ test('reconcileAgents patches hermes_local agents, capability discovery, and man
   assert.match(await readFile(join(root, 'org-chart.md'), 'utf8'), /Designer/);
 
   await rm(root, { recursive: true, force: true });
+});
+
+test('reconcileAgents clears stale Hermes model settings in Paperclip default mode', async () => {
+  const apiCalls = [];
+  const root = await mkdtemp(join(tmpdir(), 'profile-sync-model-default-'));
+  try {
+    await reconcileAgents({
+      companies: [{ id: 'co_1', name: 'Acme, Inc.' }],
+      listAgents: async () => [
+        {
+          id: 'a_1',
+          name: 'Researcher',
+          adapterType: 'hermes_local',
+          adapterConfig: {
+            model: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            toolsets: 'terminal,file,web',
+          },
+          metadata: {},
+        },
+      ],
+      patchAgent: async (agentId, payload) => {
+        apiCalls.push({ agentId, payload });
+        return { id: agentId, ...payload };
+      },
+      ensureHomes: async ({ profileSlug }) => ({
+        profileSlug,
+        modelConfig: {
+          model: 'gpt-5.5',
+          provider: 'openai-codex',
+        },
+      }),
+      manifest: { managedAgents: [] },
+      paperclipAgentServerUrl: 'http://paperclip:3100',
+      orgMirrorRoot: root,
+      hermesModelMode: 'paperclip-default',
+    });
+
+    assert.equal(apiCalls.length, 1);
+    assert.equal(apiCalls[0].payload.adapterConfig.model, null);
+    assert.equal(apiCalls[0].payload.adapterConfig.provider, null);
+    assert.equal(apiCalls[0].payload.adapterConfig.toolsets, 'terminal,file,web');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('reconcileAgents grants task assignment to agents with direct reports', async () => {
@@ -997,6 +1070,7 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       ORG_MIRROR_ROOT: join(root, 'agent-stack'),
       PROFILE_SYNC_MANIFEST_PATH: manifestPath,
       PROFILE_SYNC_TEMPLATE_DIR: join(process.cwd(), 'hermes-runtime/templates'),
+      PROFILE_SYNC_HERMES_MODEL_MODE: 'paperclip-default',
     });
 
     assert.equal(child.code, 0, child.stderr);
@@ -1015,6 +1089,8 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
       ['research', 'copywriting'],
     );
+    assert.equal(patched[0].adapterConfig.model, null);
+    assert.equal(patched[0].adapterConfig.provider, null);
     await stat(join(root, 'hermes/profiles/acme-inc-researcher/config.yaml'));
     await stat(join(root, 'gbrain/acme-inc-researcher'));
 

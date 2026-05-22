@@ -25,6 +25,8 @@ const DEFAULT_MANIFEST_PATH = '/data/agent-stack/profile-sync/manifest.json';
 const DEFAULT_SYNC_API_BASE = 'http://paperclip:3100';
 const DEFAULT_AGENT_API_URL = 'http://127.0.0.1:3100';
 const DEFAULT_ORG_MIRROR_ROOT = '/data/agent-stack';
+const HERMES_MODEL_MODE_INHERIT = 'inherit';
+const HERMES_MODEL_MODE_PAPERCLIP_DEFAULT = 'paperclip-default';
 const DELEGATION_PROTOCOL_PATH = '/data/agent-stack/delegation-protocol.md';
 const DELEGATION_PROTOCOL_FILE = 'DELEGATION_PROTOCOL.md';
 const DELEGATION_PROTOCOL_POINTER = [
@@ -119,9 +121,12 @@ export function buildManagedAgentPayload({
   hermesDataRoot = '/data/hermes',
   gbrainDataRoot = '/data/gbrain',
   hermesModelConfig,
+  hermesModelMode = HERMES_MODEL_MODE_INHERIT,
   capabilityContext,
   desiredSkills,
 }) {
+  const normalizedHermesModelMode = normalizeHermesModelMode(hermesModelMode);
+  const usePaperclipModelDefault = normalizedHermesModelMode === HERMES_MODEL_MODE_PAPERCLIP_DEFAULT;
   const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
   const profileSlug = desiredProfileSlug(
     companyName,
@@ -139,35 +144,50 @@ export function buildManagedAgentPayload({
   const existingEnv = existingConfig.env && typeof existingConfig.env === 'object'
     ? existingConfig.env
     : {};
+  const {
+    model: _existingModel,
+    provider: _existingProvider,
+    ...existingConfigWithoutModelDefaults
+  } = existingConfig;
+  const existingConfigForPayload = usePaperclipModelDefault
+    ? existingConfigWithoutModelDefaults
+    : existingConfig;
 
   const capabilities = capabilityContext
     ? withCapabilityDiscovery(agent.capabilities, agent, capabilityContext)
     : normalizedCapabilityText(agent.capabilities);
 
+  const adapterConfig = {
+    ...(!usePaperclipModelDefault && hermesModelConfig?.model ? { model: hermesModelConfig.model } : {}),
+    ...(!usePaperclipModelDefault && hermesModelConfig?.provider ? { provider: hermesModelConfig.provider } : {}),
+    timeoutSec: 1800,
+    persistSession: true,
+    quiet: true,
+    toolsets: 'terminal,file,web',
+    cwd: '/opt/work',
+    ...existingConfigForPayload,
+    toolsets: normalizeToolsets(existingConfig.toolsets),
+    ...(Array.isArray(desiredSkills)
+      ? { paperclipSkillSync: withDesiredPaperclipSkills(existingConfig.paperclipSkillSync, desiredSkills) }
+      : {}),
+    paperclipApiUrl: withApiSuffix(paperclipServerUrl),
+    env: {
+      ...existingEnv,
+      HERMES_HOME: hermesHome,
+      GBRAIN_HOME: gbrainHome,
+      PAPERCLIP_API_URL: paperclipServerUrl,
+    },
+  };
+
+  if (usePaperclipModelDefault) {
+    adapterConfig.model = null;
+    adapterConfig.provider = null;
+  }
+
   return {
     capabilities: withSharedOperatingPointers(capabilities),
     adapterType: 'hermes_local',
-    adapterConfig: {
-      ...(hermesModelConfig?.model ? { model: hermesModelConfig.model } : {}),
-      ...(hermesModelConfig?.provider ? { provider: hermesModelConfig.provider } : {}),
-      timeoutSec: 1800,
-      persistSession: true,
-      quiet: true,
-      toolsets: 'terminal,file,web',
-      cwd: '/opt/work',
-      ...existingConfig,
-      toolsets: normalizeToolsets(existingConfig.toolsets),
-      ...(Array.isArray(desiredSkills)
-        ? { paperclipSkillSync: withDesiredPaperclipSkills(existingConfig.paperclipSkillSync, desiredSkills) }
-        : {}),
-      paperclipApiUrl: withApiSuffix(paperclipServerUrl),
-      env: {
-        ...existingEnv,
-        HERMES_HOME: hermesHome,
-        GBRAIN_HOME: gbrainHome,
-        PAPERCLIP_API_URL: paperclipServerUrl,
-      },
-    },
+    adapterConfig,
     metadata: {
       ...metadata,
       hermesProfile: profileSlug,
@@ -177,6 +197,23 @@ export function buildManagedAgentPayload({
       managedBy: MANAGED_BY,
     },
   };
+}
+
+function normalizeHermesModelMode(mode) {
+  const normalized = String(mode || HERMES_MODEL_MODE_INHERIT).trim().toLowerCase();
+  if (!normalized || normalized === HERMES_MODEL_MODE_INHERIT) return HERMES_MODEL_MODE_INHERIT;
+  if (
+    normalized === HERMES_MODEL_MODE_PAPERCLIP_DEFAULT
+    || normalized === 'paperclip_default'
+    || normalized === 'model-default'
+    || normalized === 'model_default'
+    || normalized === 'default'
+  ) {
+    return HERMES_MODEL_MODE_PAPERCLIP_DEFAULT;
+  }
+  throw new Error(
+    `Invalid PROFILE_SYNC_HERMES_MODEL_MODE: ${mode}. Expected inherit or paperclip-default.`,
+  );
 }
 
 function normalizeToolsets(toolsets) {
@@ -417,7 +454,9 @@ export async function reconcileAgents({
   orgMirrorRoot = DEFAULT_ORG_MIRROR_ROOT,
   initGbrain = true,
   grantManagerAssignTasks = true,
+  hermesModelMode = HERMES_MODEL_MODE_INHERIT,
 }) {
+  const normalizedHermesModelMode = normalizeHermesModelMode(hermesModelMode);
   const now = new Date().toISOString();
   const previous = Array.isArray(manifest.managedAgents) ? manifest.managedAgents : [];
   const previousByAgent = new Map(previous.map((entry) => [entry.agentId, entry]));
@@ -534,6 +573,7 @@ export async function reconcileAgents({
           hermesDataRoot,
           gbrainDataRoot,
           hermesModelConfig: homes.modelConfig,
+          hermesModelMode: normalizedHermesModelMode,
           capabilityContext,
           desiredSkills,
         });
@@ -1260,6 +1300,7 @@ async function runOnceFromEnv() {
     orgMirrorRoot: envValue('ORG_MIRROR_ROOT', DEFAULT_ORG_MIRROR_ROOT),
     initGbrain: !envBool('PROFILE_SYNC_SKIP_GBRAIN_INIT', false),
     grantManagerAssignTasks: envBool('PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS', true),
+    hermesModelMode: envValue('PROFILE_SYNC_HERMES_MODEL_MODE', HERMES_MODEL_MODE_INHERIT),
   });
 
   await writeManifest(result.manifest, manifestPath);

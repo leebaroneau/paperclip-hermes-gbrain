@@ -67,3 +67,16 @@ test('local build override builds the template-agent image from this repository'
   assert.match(compose, /pull_policy:\s*build/);
   assert.match(compose, /pull_policy:\s*never/);
 });
+
+test('Hermes image installs the Anthropic provider dependency', async () => {
+  const dockerfile = await readFile(join(repoRoot, 'paperclip/Dockerfile'), 'utf8');
+
+  assert.match(dockerfile, /uv pip install --python \.\/venv\/bin\/python[^\n]*"anthropic>=0\.39\.0"/);
+});
+
+test('Hermes entrypoint marks the wrapper healthcheck ready', async () => {
+  const entrypoint = await readFile(join(repoRoot, 'paperclip/hermes-entrypoint.sh'), 'utf8');
+
+  assert.match(entrypoint, /rm -f \/tmp\/hermes-entrypoint-ready/);
+  assert.match(entrypoint, /touch \/tmp\/hermes-entrypoint-ready\nexec runuser -u node -- hermes/);
+});
