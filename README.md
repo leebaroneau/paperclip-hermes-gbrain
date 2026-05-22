@@ -243,12 +243,22 @@ PROFILE_SYNC_INTERVAL_SEC=60
 PROFILE_SYNC_DELETE_MODE=archive
 PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=1
 PROFILE_SYNC_HERMES_MODEL_MODE=inherit
+PROFILE_SYNC_DEFAULT_COMPANY_SKILLS=gbrain,use-100m-framework
 PAPERCLIP_PROFILE_SYNC_API_KEY=<pcp_board_...>   # same key as PAPERCLIP_API_KEY is fine
 ```
 
 Profile sync also grants `canAssignTasks` to active agents that have direct reports, preserving their existing `canCreateAgents` setting. Disable with `PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=0` if a deployment wants CEO-only task assignment.
 
 By default, profile sync writes each managed `hermes_local` agent's `adapterConfig.model` / `provider` from that role's Hermes profile config (`PROFILE_SYNC_HERMES_MODEL_MODE=inherit`). Set `PROFILE_SYNC_HERMES_MODEL_MODE=paperclip-default` when you want the Paperclip UI to show `Model default` for all managed Hermes agents and let the Hermes profile choose the model at execution time. In that mode, profile sync explicitly clears stale `model` and `provider` values on every managed Hermes agent.
+
+Profile sync also keeps baseline runtime skills in Paperclip's company skill
+list. `PROFILE_SYNC_DEFAULT_COMPANY_SKILLS` defaults to
+`gbrain,use-100m-framework`; for each listed slug, profile-sync reads
+`/opt/hermes-runtime/skills/<slug>/SKILL.md`, creates the company skill if it is
+missing, then uses the Paperclip company skill list as the desired skill set for
+managed Hermes roles. Existing company skills are never patched or replaced, so
+company-specific skill edits stay intact. Set
+`PROFILE_SYNC_DEFAULT_COMPANY_SKILLS=none` to disable this seeding.
 
 Grants are **tracked in `/data/agent-stack/profile-sync/manifest.json` under `permissionedAgents`** and **revoked on a future cycle if the agent loses qualification** (e.g. its last direct report leaves). CEOs (`agent.role === 'ceo'`) are skipped in both grant and revoke paths because Paperclip surfaces their `canAssignTasks` via the role-derived `taskAssignSource: ceo_role` permission — the explicit-grant lifecycle is for non-CEO managers. Agents granted before this manifest tracking shipped are *not* eligible for the steady-state revoke; see [Cleaning up historical canAssignTasks drift](#cleaning-up-historical-canassigntasks-drift) below for the one-shot cleanup tool.
 
@@ -393,6 +403,12 @@ Re-running is safe: existing agents are patched, not duplicated.
 
 GBrain skills are installed into Hermes profiles and GBrain homes through two separate paths — both fire automatically, you don't need to wire anything up.
 
+The template also ships a small `gbrain` runtime skill at
+`hermes-runtime/skills/gbrain/SKILL.md`. Profile sync creates the matching
+Paperclip company skill by default, then syncs the company skill list into each
+managed role. That keeps Paperclip as the source of truth while Hermes still
+loads the actual skill file from the profile.
+
 **Bootstrap-time (every container start, every Hermes profile including `default`).**
 The `paperclip` entrypoint runs `bootstrap-profiles.sh`, which for each profile in `HERMES_PROFILES` (just `default` out of the box) symlinks every skill from `/opt/gbrain/skills/` (baked into the image from the upstream GBrain repo) into:
 
@@ -422,6 +438,9 @@ The bundled `use-100m-framework` skill is installed into every Hermes profile
 through the existing `hermes-runtime/skills` propagation path. Bootstrap and
 profile-sync symlink the skill into each profile's `skills/agent-stack/`
 directory, so new Paperclip-managed profiles pick it up without separate setup.
+Profile sync also seeds it into Paperclip company skills by default, which makes
+Paperclip the control-plane source of truth for whether managed roles should use
+it.
 
 Company agents use the skill to apply the shared `$100M` framework and write
 sanitized `100m-field-learning` proposals into their role-specific GBrain homes.

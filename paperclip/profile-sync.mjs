@@ -28,6 +28,11 @@ const DEFAULT_ORG_MIRROR_ROOT = '/data/agent-stack';
 const MIN_MANAGED_TIMEOUT_SEC = 1800;
 const HERMES_MODEL_MODE_INHERIT = 'inherit';
 const HERMES_MODEL_MODE_PAPERCLIP_DEFAULT = 'paperclip-default';
+const DEFAULT_COMPANY_SKILL_SOURCE_DIR = '/opt/hermes-runtime/skills';
+const DEFAULT_COMPANY_SKILL_SLUGS = Object.freeze([
+  'gbrain',
+  'use-100m-framework',
+]);
 const DELEGATION_PROTOCOL_PATH = '/data/agent-stack/delegation-protocol.md';
 const DELEGATION_PROTOCOL_FILE = 'DELEGATION_PROTOCOL.md';
 const DELEGATION_PROTOCOL_POINTER = [
@@ -250,6 +255,53 @@ function withDesiredPaperclipSkills(existingSync, desiredSkills) {
   };
 }
 
+async function ensureDefaultCompanySkills({
+  companyId,
+  listedSkills,
+  defaultCompanySkills,
+  ensureCompanySkill,
+}) {
+  const skills = Array.isArray(listedSkills) ? [...listedSkills] : undefined;
+  if (!skills || !Array.isArray(defaultCompanySkills) || defaultCompanySkills.length === 0) {
+    return { skills, created: 0 };
+  }
+  if (typeof ensureCompanySkill !== 'function') return { skills, created: 0 };
+
+  const existing = new Set(skills.flatMap(companySkillIdentityKeys));
+  let created = 0;
+  for (const skill of defaultCompanySkills) {
+    const slug = typeof skill?.slug === 'string' ? skill.slug.trim() : '';
+    if (!slug || existing.has(slug)) continue;
+
+    const createdSkill = await ensureCompanySkill(companyId, {
+      name: skill.name || slug,
+      slug,
+      description: skill.description || null,
+      markdown: skill.markdown || '',
+    });
+    if (createdSkill) created += 1;
+    const nextSkill = createdSkill && typeof createdSkill === 'object'
+      ? createdSkill
+      : { key: `company/${slug}`, slug, name: skill.name || slug };
+    skills.push(nextSkill);
+    for (const key of companySkillIdentityKeys(nextSkill)) existing.add(key);
+  }
+
+  return { skills, created };
+}
+
+function companySkillIdentityKeys(skill) {
+  const keys = [skill?.key, skill?.slug, skill?.name]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(keys.flatMap((value) => {
+    const parts = value.split('/').filter(Boolean);
+    const lastPart = parts[parts.length - 1];
+    return lastPart && lastPart !== value ? [value, lastPart] : [value];
+  }))];
+}
+
 function withSharedOperatingPointers(capabilities) {
   let next = typeof capabilities === 'string' ? capabilities.trim() : '';
 
@@ -449,6 +501,7 @@ export async function reconcileAgents({
   companies,
   listAgents,
   listCompanySkills,
+  ensureCompanySkill,
   patchAgent,
   patchAgentPermissions,
   ensureHomes = ensureProfileHomes,
@@ -464,6 +517,7 @@ export async function reconcileAgents({
   initGbrain = true,
   grantManagerAssignTasks = true,
   hermesModelMode = HERMES_MODEL_MODE_INHERIT,
+  defaultCompanySkills = [],
 }) {
   const normalizedHermesModelMode = normalizeHermesModelMode(hermesModelMode);
   const now = new Date().toISOString();
@@ -481,6 +535,7 @@ export async function reconcileAgents({
   let permissioned = 0;
   let revoked = 0;
   let provisioned = 0;
+  let companySkillsCreated = 0;
 
   for (const company of companies) {
     scannedCompanies.add(company.id);
@@ -491,7 +546,14 @@ export async function reconcileAgents({
     const listedSkills = typeof listCompanySkills === 'function'
       ? await listCompanySkills(company.id)
       : undefined;
-    const desiredSkills = Array.isArray(listedSkills) ? normalizeSkillKeys(listedSkills) : undefined;
+    const ensuredSkills = await ensureDefaultCompanySkills({
+      companyId: company.id,
+      listedSkills,
+      defaultCompanySkills,
+      ensureCompanySkill,
+    });
+    companySkillsCreated += ensuredSkills.created;
+    const desiredSkills = Array.isArray(ensuredSkills.skills) ? normalizeSkillKeys(ensuredSkills.skills) : undefined;
     const orgAgents = [];
 
     for (let agent of agents) {
@@ -647,6 +709,7 @@ export async function reconcileAgents({
     revoked,
     provisioned,
     retired,
+    companySkillsCreated,
     manifest: {
       version: 1,
       updatedAt: now,
@@ -1265,6 +1328,55 @@ async function resolveCompanies({ api, companyIds, configuredCompanies }) {
   })).filter((company) => company.id);
 }
 
+async function loadDefaultCompanySkillsFromEnv() {
+  const slugs = parseDefaultCompanySkillSlugs(
+    envValue('PROFILE_SYNC_DEFAULT_COMPANY_SKILLS', DEFAULT_COMPANY_SKILL_SLUGS.join(',')),
+  );
+  if (slugs.length === 0) return [];
+
+  const sourceDir = envValue('PROFILE_SYNC_DEFAULT_COMPANY_SKILL_SOURCE_DIR', DEFAULT_COMPANY_SKILL_SOURCE_DIR);
+  const skills = [];
+  for (const slug of slugs) {
+    const skillPath = join(sourceDir, slug, 'SKILL.md');
+    try {
+      const markdown = await readFile(skillPath, 'utf8');
+      skills.push({
+        slug,
+        name: skillDisplayName(markdown, slug),
+        description: skillDescription(markdown),
+        markdown,
+      });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      console.warn(`Default company skill ${slug} not found at ${skillPath}; skipping`);
+    }
+  }
+  return skills;
+}
+
+function parseDefaultCompanySkillSlugs(value) {
+  const raw = String(value || '').trim();
+  if (!raw || /^(0|false|no|off|none)$/i.test(raw)) return [];
+  return [...new Set(raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function skillDisplayName(markdown, slug) {
+  const parsedName = frontmatterField(markdown, 'name');
+  return parsedName || slug;
+}
+
+function skillDescription(markdown) {
+  return frontmatterField(markdown, 'description') || null;
+}
+
+function frontmatterField(markdown, field) {
+  const match = String(markdown || '').match(new RegExp(`^${field}:\\s*['"]?([^'"\\n]+)['"]?\\s*$`, 'mi'));
+  return match ? match[1].trim() : '';
+}
+
 async function runOnceFromEnv() {
   const apiKey = envValue('PAPERCLIP_PROFILE_SYNC_API_KEY') || envValue('PAPERCLIP_API_KEY');
   if (!apiKey) {
@@ -1283,6 +1395,7 @@ async function runOnceFromEnv() {
   const companies = await resolveCompanies({ api, companyIds, configuredCompanies });
   const manifestPath = envValue('PROFILE_SYNC_MANIFEST_PATH', DEFAULT_MANIFEST_PATH);
   const manifest = await readManifest(manifestPath);
+  const defaultCompanySkills = await loadDefaultCompanySkillsFromEnv();
 
   const result = await reconcileAgents({
     companies,
@@ -1294,6 +1407,22 @@ async function runOnceFromEnv() {
         if (String(error?.message || '').includes(`GET /api/companies/${companyId}/skills failed with 404:`)) {
           console.warn(`Company skills endpoint is unavailable for ${companyId}; leaving desired skill sync unchanged`);
           return undefined;
+        }
+        throw error;
+      }
+    },
+    ensureCompanySkill: async (companyId, skill) => {
+      try {
+        return await api('POST', `/api/companies/${companyId}/skills`, {
+          name: skill.name,
+          slug: skill.slug,
+          description: skill.description || null,
+          markdown: skill.markdown || '',
+        });
+      } catch (error) {
+        if (String(error?.message || '').includes(`POST /api/companies/${companyId}/skills failed with 409:`)) {
+          console.warn(`Default company skill ${skill.slug} already exists for ${companyId}; leaving it unchanged`);
+          return null;
         }
         throw error;
       }
@@ -1310,6 +1439,7 @@ async function runOnceFromEnv() {
     initGbrain: !envBool('PROFILE_SYNC_SKIP_GBRAIN_INIT', false),
     grantManagerAssignTasks: envBool('PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS', true),
     hermesModelMode: envValue('PROFILE_SYNC_HERMES_MODEL_MODE', HERMES_MODEL_MODE_INHERIT),
+    defaultCompanySkills,
   });
 
   await writeManifest(result.manifest, manifestPath);
@@ -1321,6 +1451,7 @@ async function runOnceFromEnv() {
     permissioned: result.permissioned,
     revoked: result.revoked,
     retired: result.retired,
+    companySkillsCreated: result.companySkillsCreated,
     managedAgents: result.manifest.managedAgents.length,
     permissionedAgents: result.manifest.permissionedAgents.length,
   }));
