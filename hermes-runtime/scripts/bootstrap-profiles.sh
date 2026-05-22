@@ -4,7 +4,7 @@ set -euo pipefail
 HERMES_DATA_ROOT="${HERMES_DATA_ROOT:-/opt/data/hermes}"
 GBRAIN_DATA_ROOT="${GBRAIN_DATA_ROOT:-/opt/data/gbrain}"
 HERMES_PROFILES="${HERMES_PROFILES:-default}"
-TEMPLATE_DIR="/opt/hermes-runtime/templates"
+TEMPLATE_DIR="${TEMPLATE_DIR:-/opt/hermes-runtime/templates}"
 
 mkdir -p "$HERMES_DATA_ROOT/profiles" "$GBRAIN_DATA_ROOT"
 
@@ -103,7 +103,7 @@ install_agent_stack_skills() {
 sync_mcp_servers_from_template() {
   local profile_config="$1"
   local template_config="$TEMPLATE_DIR/config.yaml"
-  local python_bin="/usr/local/lib/hermes-agent/venv/bin/python"
+  local python_bin="${BOOTSTRAP_PYTHON_BIN:-/usr/local/lib/hermes-agent/venv/bin/python}"
 
   if [[ ! -f "$profile_config" || ! -f "$template_config" || ! -x "$python_bin" ]]; then
     return 0
