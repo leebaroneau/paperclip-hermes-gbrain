@@ -93,11 +93,20 @@ install_agent_stack_skills() {
   done
 }
 
-# Idempotently add any mcp_servers entries that exist in the template config
-# but are missing from this profile's config. Existing entries are NEVER
-# overwritten, so user customisations (different command path, disabled flag,
-# extra fields) are preserved. New top-level keys added to the template
-# (e.g. paperclip MCP server) are inherited by existing profiles on next boot.
+# Idempotently reconcile mcp_servers between the template and a profile config.
+#
+# Two operations, both conservative — operator customisations are preserved:
+#   1. ADD-NEW: template entries not present in the profile are copied verbatim.
+#      New MCP servers added to the template (e.g. a future foo MCP) reach
+#      existing profiles on next boot.
+#   2. MERGE-ENV: for entries that exist in BOTH, any env keys defined in the
+#      template's env: block but MISSING from the profile's env: block are
+#      added. Existing env values are never overwritten. This closes the gap
+#      where a template fix (e.g. adding PAPERCLIP_API_KEY to the paperclip
+#      MCP env block) would otherwise never reach existing profiles.
+#
+# Non-env fields (command, args, timeout, custom keys) on existing entries
+# are still NEVER touched — operators who edited those keep their changes.
 #
 # Uses Hermes' bundled Python interpreter for PyYAML.
 sync_mcp_servers_from_template() {
@@ -126,20 +135,49 @@ if not template_mcp:
     sys.exit(0)
 
 profile_mcp = profile.get("mcp_servers") or {}
-added = []
+added_entries = []
+merged_env = {}  # name -> list of env keys added
+
 for name, spec in template_mcp.items():
     if name not in profile_mcp:
         profile_mcp[name] = spec
-        added.append(name)
+        added_entries.append(name)
+        continue
 
-if not added:
+    # Merge missing env keys onto existing entry. Never overwrite.
+    template_env = (spec or {}).get("env") or {}
+    if not isinstance(template_env, dict) or not template_env:
+        continue
+
+    existing_entry = profile_mcp[name]
+    if not isinstance(existing_entry, dict):
+        continue
+
+    existing_env = existing_entry.get("env") or {}
+    if not isinstance(existing_env, dict):
+        existing_env = {}
+
+    added_keys = []
+    for env_key, env_val in template_env.items():
+        if env_key not in existing_env:
+            existing_env[env_key] = env_val
+            added_keys.append(env_key)
+
+    if added_keys:
+        existing_entry["env"] = existing_env
+        merged_env[name] = added_keys
+
+if not added_entries and not merged_env:
     sys.exit(0)
 
 profile["mcp_servers"] = profile_mcp
 with open(profile_path, "w") as f:
     yaml.safe_dump(profile, f, sort_keys=False)
 
-print(f"[bootstrap] merged mcp_servers into {profile_path}: {', '.join(added)}", file=sys.stderr)
+if added_entries:
+    print(f"[bootstrap] added mcp_servers to {profile_path}: {', '.join(added_entries)}", file=sys.stderr)
+for name, keys in merged_env.items():
+    print(f"[bootstrap] merged env keys onto {name} in {profile_path}: {', '.join(keys)}", file=sys.stderr)
 PYEOF
 }
 
