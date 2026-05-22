@@ -4,7 +4,7 @@ set -euo pipefail
 HERMES_DATA_ROOT="${HERMES_DATA_ROOT:-/opt/data/hermes}"
 GBRAIN_DATA_ROOT="${GBRAIN_DATA_ROOT:-/opt/data/gbrain}"
 HERMES_PROFILES="${HERMES_PROFILES:-default}"
-TEMPLATE_DIR="/opt/hermes-runtime/templates"
+TEMPLATE_DIR="${TEMPLATE_DIR:-/opt/hermes-runtime/templates}"
 
 mkdir -p "$HERMES_DATA_ROOT/profiles" "$GBRAIN_DATA_ROOT"
 
@@ -93,52 +93,101 @@ install_agent_stack_skills() {
   done
 }
 
-# Idempotently reconcile mcp_servers between the template and a profile config.
+# Idempotently reconcile mcp_servers between the effective template
+# (canonical + brand overlays) and a profile's config. Conservative —
+# operator customisations are preserved.
 #
-# Two operations, both conservative — operator customisations are preserved:
-#   1. ADD-NEW: template entries not present in the profile are copied verbatim.
-#      New MCP servers added to the template (e.g. a future foo MCP) reach
-#      existing profiles on next boot.
-#   2. MERGE-ENV: for entries that exist in BOTH, any env keys defined in the
-#      template's env: block but MISSING from the profile's env: block are
-#      added. Existing env values are never overwritten. This closes the gap
-#      where a template fix (e.g. adding PAPERCLIP_API_KEY to the paperclip
-#      MCP env block) would otherwise never reach existing profiles.
+# Two operations:
+#   1. ADD-NEW: entries present in the effective template but missing from
+#      the profile are copied verbatim. New MCP servers added to the
+#      canonical template OR a brand overlay reach existing profiles on
+#      next boot.
+#   2. MERGE-ENV: for entries that exist in BOTH the effective template
+#      and the profile, any env keys defined in the template's env: block
+#      but MISSING from the profile's env: block are added. Existing env
+#      values are never overwritten. This closes the gap where a template
+#      fix (e.g. adding PAPERCLIP_API_KEY to the paperclip MCP env block)
+#      would otherwise never reach existing profiles.
 #
 # Non-env fields (command, args, timeout, custom keys) on existing entries
 # are still NEVER touched — operators who edited those keep their changes.
 #
-# Uses Hermes' bundled Python interpreter for PyYAML.
+# Merge semantics (strictly additive at both layers):
+#   - Canonical template wins over any overlay on key collision.
+#   - Among overlays, alphabetic-first filename wins on collision.
+#   - Profile wins over the effective (canonical + overlays) template,
+#     except for missing env keys on entries that exist in both.
+#
+# Brand wrappers contribute overlays via Docker Compose `configs:` mounts
+# at /opt/hermes-runtime/templates/overlays/<brand>.yaml on both the
+# paperclip AND hermes services. See hermes-runtime/templates/overlays/README.md.
+#
+# Error handling: malformed YAML, missing `mcp_servers` key, or non-dict
+# `mcp_servers` value emit a single stderr warning and the overlay is
+# skipped. Bootstrap MUST NOT crash because of overlay errors — the
+# canonical template path remains authoritative.
+#
+# Uses Hermes' bundled Python interpreter for PyYAML (overridable via
+# BOOTSTRAP_PYTHON_BIN for tests).
 sync_mcp_servers_from_template() {
   local profile_config="$1"
   local template_config="$TEMPLATE_DIR/config.yaml"
-  local python_bin="/usr/local/lib/hermes-agent/venv/bin/python"
+  local overlays_dir="$TEMPLATE_DIR/overlays"
+  local python_bin="${BOOTSTRAP_PYTHON_BIN:-/usr/local/lib/hermes-agent/venv/bin/python}"
 
   if [[ ! -f "$profile_config" || ! -f "$template_config" || ! -x "$python_bin" ]]; then
     return 0
   fi
 
-  "$python_bin" - "$template_config" "$profile_config" <<'PYEOF'
+  "$python_bin" - "$template_config" "$profile_config" "$overlays_dir" <<'PYEOF'
+import os
 import sys
+import glob
 import yaml
 
-template_path, profile_path = sys.argv[1], sys.argv[2]
+template_path, profile_path, overlays_dir = sys.argv[1], sys.argv[2], sys.argv[3]
 
 with open(template_path) as f:
     template = yaml.safe_load(f) or {}
 
+effective_mcp = dict(template.get("mcp_servers") or {})
+
+# Absorb overlay mcp_servers into the effective template, strictly additive.
+# Canonical wins on collision (entries already in effective_mcp are skipped).
+# Among overlays, alphabetic-first filename wins on collision (later files
+# also see those keys as already-present).
+if os.path.isdir(overlays_dir):
+    for overlay_path in sorted(glob.glob(os.path.join(overlays_dir, "*.yaml"))):
+        try:
+            with open(overlay_path) as f:
+                overlay = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            print(f"[bootstrap] overlay {overlay_path}: skipped ({exc.__class__.__name__})", file=sys.stderr)
+            continue
+        if not isinstance(overlay, dict):
+            print(f"[bootstrap] overlay {overlay_path}: skipped (top-level is not a mapping)", file=sys.stderr)
+            continue
+        overlay_mcp = overlay.get("mcp_servers")
+        if overlay_mcp is None:
+            continue
+        if not isinstance(overlay_mcp, dict):
+            print(f"[bootstrap] overlay {overlay_path}: skipped (mcp_servers is not a mapping)", file=sys.stderr)
+            continue
+        for name, spec in overlay_mcp.items():
+            if name not in effective_mcp:
+                effective_mcp[name] = spec
+
+if not effective_mcp:
+    sys.exit(0)
+
 with open(profile_path) as f:
     profile = yaml.safe_load(f) or {}
-
-template_mcp = template.get("mcp_servers") or {}
-if not template_mcp:
-    sys.exit(0)
 
 profile_mcp = profile.get("mcp_servers") or {}
 added_entries = []
 merged_env = {}  # name -> list of env keys added
 
-for name, spec in template_mcp.items():
+for name, spec in effective_mcp.items():
     if name not in profile_mcp:
         profile_mcp[name] = spec
         added_entries.append(name)
