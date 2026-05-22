@@ -70,11 +70,15 @@ start_gateway_profiles() {
   raw_profiles="$(discover_gateway_profiles | paste -sd, -)"
   [[ -n "$raw_profiles" ]] || return 0
 
-  mkdir -p "$HERMES_DATA_ROOT/logs"
-  chown -R node:node "$HERMES_DATA_ROOT/logs"
+  local state_dir=/tmp/hermes-supervisor
+
+  mkdir -p "$HERMES_DATA_ROOT/logs" "$state_dir"
+  chown -R node:node "$HERMES_DATA_ROOT/logs" "$state_dir"
+  : > "$state_dir/expected-profiles"
+  chown node:node "$state_dir/expected-profiles"
 
   IFS=',' read -ra gateway_profiles <<< "$raw_profiles"
-  local raw_profile profile log_file
+  local raw_profile profile log_file pid_file
   for raw_profile in "${gateway_profiles[@]}"; do
     profile="$(echo "$raw_profile" | tr '[:upper:]' '[:lower:]' | xargs)"
     [[ -n "$profile" ]] || continue
@@ -84,10 +88,13 @@ start_gateway_profiles() {
     fi
 
     log_file="$HERMES_DATA_ROOT/logs/${profile}-gateway.log"
-    echo "[gateway-autostart] starting gateway for profile: $profile"
+    pid_file="$state_dir/${profile}.pid"
+    printf '%s\n' "$profile" >> "$state_dir/expected-profiles"
+
+    echo "[gateway-autostart] supervising gateway for profile: $profile (backoff=${HERMES_GATEWAY_BACKOFF_SECS:-5}s)"
     runuser -u node -- bash -lc \
-      'profile="$1"; log_file="$2"; nohup hermes --profile "$profile" gateway run --replace --accept-hooks >> "$log_file" 2>&1 < /dev/null &' \
-      bash "$profile" "$log_file"
+      'nohup /opt/paperclip/supervise-gateway.sh "$1" "$2" "$3" >> "$2" 2>&1 < /dev/null &' \
+      bash "$profile" "$log_file" "$pid_file"
   done
 }
 

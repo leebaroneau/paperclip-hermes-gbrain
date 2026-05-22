@@ -78,7 +78,7 @@ services:
     depends_on:
       - paperclip
     healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/hermes-entrypoint-ready"]
+      test: ["CMD", "/opt/paperclip/check-gateways.sh"]
       interval: 30s
       timeout: 10s
       start_period: 60s

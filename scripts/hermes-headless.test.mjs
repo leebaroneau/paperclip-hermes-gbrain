@@ -16,7 +16,7 @@ test('compose keeps Hermes headless and unrouted by default', async () => {
   assert.match(compose, /HERMES_DASHBOARD_ENABLED:\s*\$\{HERMES_DASHBOARD_ENABLED:-0\}/);
   assert.doesNotMatch(compose, /hermes-auth/);
   assert.doesNotMatch(compose, /traefik\.http\.routers\.hermes/);
-  assert.match(compose, /healthcheck:\s*\n\s+test:\s*\["CMD", "test", "-f", "\/tmp\/hermes-entrypoint-ready"\]/);
+  assert.match(compose, /healthcheck:\s*\n\s+test:\s*\["CMD", "\/opt\/paperclip\/check-gateways\.sh"\]/);
 });
 
 test('Hermes entrypoint can stay alive for gateways without starting the dashboard', async () => {
@@ -40,4 +40,25 @@ test('Coolify env helper emits a headless Hermes default', async () => {
 
   assert.match(helper, /^HERMES_DASHBOARD_ENABLED=0$/m);
   assert.doesNotMatch(helper, /^HERMES_HOSTNAME=/m);
+});
+
+test('gateway autostart supervises each profile instead of fire-and-forget', async () => {
+  const entrypoint = await file('paperclip/hermes-entrypoint.sh');
+
+  // Supervisor is invoked per profile and records the expected-profiles list
+  // so the healthcheck can verify liveness.
+  assert.match(entrypoint, /\/opt\/paperclip\/supervise-gateway\.sh/);
+  assert.match(entrypoint, /expected-profiles/);
+
+  // The old fire-and-forget launch must not come back.
+  assert.doesNotMatch(entrypoint, /nohup hermes --profile/);
+});
+
+test('Dockerfile ships and chmods the supervisor + healthcheck scripts', async () => {
+  const dockerfile = await file('paperclip/Dockerfile');
+
+  assert.match(dockerfile, /COPY paperclip\/supervise-gateway\.sh \/opt\/paperclip\/supervise-gateway\.sh/);
+  assert.match(dockerfile, /COPY paperclip\/check-gateways\.sh \/opt\/paperclip\/check-gateways\.sh/);
+  assert.match(dockerfile, /chmod \+x [^\n]*\/opt\/paperclip\/supervise-gateway\.sh/);
+  assert.match(dockerfile, /chmod \+x [^\n]*\/opt\/paperclip\/check-gateways\.sh/);
 });
