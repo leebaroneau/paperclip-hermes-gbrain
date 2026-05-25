@@ -34,7 +34,10 @@ WORKTREES_ROOT="$HERMES_REPOS_ROOT/worktrees"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-die() { echo "ERROR: $*" >&2; exit 1; }
+die() {
+  printf "ERROR: %s\n" "$*" >&2
+  exit 1
+}
 
 # Returns the path to a profile's .env file.
 # default profile lives at $HERMES_DATA_ROOT/.env (not profiles/default/.env).
@@ -52,7 +55,7 @@ get_allowed_repos() {
   local profile="$1"
   local env_file
   env_file=$(get_profile_env "$profile")
-  if [ -f "$env_file" ]; then
+  if [ -f "$env_file" ] && grep -q "^REPOS=" "$env_file" 2>/dev/null; then
     grep -E '^REPOS=' "$env_file" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'"
   fi
 }
@@ -68,7 +71,7 @@ check_access() {
   allowed=$(get_allowed_repos "$profile")
 
   if [ -z "$allowed" ]; then
-    die "Profile '$profile' has no repo access. Add REPOS=$repo to $env_file"
+    die "no repo access — add REPOS=$repo to $env_file"
   fi
 
   # Wrap in commas so partial matches (e.g. 'foo' matching 'foobar') don't pass.
@@ -103,7 +106,7 @@ cmd_add() {
   # Block protected base branches.
   case "$branch" in
     main|master|develop|HEAD)
-      die "Cannot create a worktree on '$branch' — use a feature branch (e.g. feature/my-task or fix/my-bug)"
+      die "Cannot create a worktree on branch '$branch'"
       ;;
   esac
 
@@ -126,7 +129,7 @@ cmd_add() {
   mkdir -p "$WORKTREES_ROOT/$profile"
 
   echo "Fetching latest from origin for $repo..." >&2
-  git -C "$bare" fetch --all --prune --quiet
+  git -C "$bare" fetch --all --prune --quiet 2>&1 | grep -v '^' || true
 
   local base_branch
   if git -C "$bare" show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
@@ -134,19 +137,19 @@ cmd_add() {
   elif git -C "$bare" show-ref --verify --quiet refs/remotes/origin/master 2>/dev/null; then
     base_branch="origin/master"
   else
-    base_branch=$(git -C "$bare" symbolic-ref --short HEAD)
+    base_branch=$(git -C "$bare" symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
     echo "Warning: no origin/main or origin/master found, branching from $base_branch" >&2
   fi
 
   if git -C "$bare" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
     echo "Branch '$branch' already exists in bare clone. Creating worktree from it." >&2
-    git -C "$bare" worktree add "$wt" "$branch"
+    git -C "$bare" worktree add "$wt" "$branch" >/dev/null 2>&1
   else
     echo "Creating branch '$branch' from $base_branch..." >&2
-    git -C "$bare" worktree add -b "$branch" "$wt" "$base_branch"
+    git -C "$bare" worktree add -b "$branch" "$wt" "$base_branch" >/dev/null 2>&1
   fi
 
-  git -C "$wt" remote set-url origin "$(git -C "$bare" remote get-url origin)" 2>/dev/null || true
+  git -C "$wt" remote set-url origin "$(git -C "$bare" remote get-url origin 2>/dev/null)" 2>/dev/null || true
 
   echo "Worktree ready: $wt (branch: $branch)" >&2
   # Print path on stdout — callers capture this.
