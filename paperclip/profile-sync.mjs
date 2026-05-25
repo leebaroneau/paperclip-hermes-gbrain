@@ -439,6 +439,15 @@ export async function ensureProfileHomes({
     join(hermesHome, 'SOUL.md'),
   );
 
+  // Seed workstation-level ONBOARDING.md into the profile root on first creation.
+  // The agent's SOUL instructs it to complete the file on first session, then delete it.
+  // No-op when /data/ONBOARDING.md doesn't exist (workstation hasn't seeded one) or when
+  // the profile already has ONBOARDING.md (mid-onboarding or completed + deleted by agent).
+  await copyIfSourceExists(
+    join(hermesDataRoot, '..', 'ONBOARDING.md'),
+    join(hermesHome, 'ONBOARDING.md'),
+  );
+
   await copyFirstExistingIfMissing(
     [
       join(templateDir, DELEGATION_PROTOCOL_FILE),
