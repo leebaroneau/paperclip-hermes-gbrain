@@ -7,6 +7,19 @@ export HERMES_PROFILES="${HERMES_PROFILES:-default}"
 export HERMES_HOME="${HERMES_HOME:-$HERMES_DATA_ROOT}"
 export GBRAIN_HOME="${GBRAIN_HOME:-$GBRAIN_DATA_ROOT/default}"
 
+# Source the shared profile-sync env file from the data volume. This file is
+# written by the paperclip service when a board API key is provisioned (either
+# manually via `paperclipai auth login` or by the auto-setup flow). Sourcing it
+# here means a key stored on the volume is automatically active in the hermes
+# container on every restart — no Coolify env var update needed.
+PROFILE_SYNC_ENV_FILE="${PROFILE_SYNC_ENV_FILE:-/data/agent-stack/profile-sync/profile-sync.env}"
+if [[ -f "$PROFILE_SYNC_ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$PROFILE_SYNC_ENV_FILE"
+  set +a
+fi
+
 rm -f /tmp/hermes-entrypoint-ready
 
 mkdir -p "$HERMES_DATA_ROOT" "$GBRAIN_DATA_ROOT" /home/node/.hermes /opt/work /data/.locks
