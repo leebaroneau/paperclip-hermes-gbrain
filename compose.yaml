@@ -10,7 +10,11 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: private
       PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
       PAPERCLIP_AUTH_PUBLIC_BASE_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
-      PAPERCLIP_ALLOWED_HOSTNAMES: ${PAPERCLIP_ALLOWED_HOSTNAMES:-paperclip,localhost,127.0.0.1}
+      # Internal Docker service name + localhost are always allowed. The public
+      # hostname is appended automatically via PAPERCLIP_HOSTNAME (already
+      # required for Traefik routing). This approach avoids an operator override
+      # accidentally stripping the internal names from the list.
+      PAPERCLIP_ALLOWED_HOSTNAMES: "paperclip,localhost,127.0.0.1,${PAPERCLIP_HOSTNAME:-paperclip.example.com}"
       BETTER_AUTH_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
       BETTER_AUTH_BASE_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
       PORT: "3100"
@@ -70,7 +74,9 @@ services:
       HERMES_REPOS_ROOT: /opt/repos
       HERMES_REPOS: ${HERMES_REPOS:-}
       PAPERCLIP_API_KEY: ${PAPERCLIP_API_KEY:-}
-      PAPERCLIP_API_BASE: http://paperclip:3100
+      # Default to Docker Compose internal service DNS. Operators running in a
+      # different topology (e.g. Paperclip on a separate host) can override via env.
+      PAPERCLIP_API_BASE: ${PAPERCLIP_API_BASE:-http://paperclip:3100}
       PAPERCLIP_DEFAULT_COMPANY_ID: ${PAPERCLIP_DEFAULT_COMPANY_ID:-}
       PAPERCLIP_PROFILE_SYNC_API_KEY: ${PAPERCLIP_PROFILE_SYNC_API_KEY:-}
     expose:
