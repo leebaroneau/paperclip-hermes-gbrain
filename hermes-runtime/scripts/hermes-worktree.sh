@@ -3,7 +3,7 @@
 #
 # Baked into the template-agent image at /usr/local/bin/hermes-worktree.
 # Runs inside the container as the container user (node in template-agent,
-# hermes in agent-haverford custom builds).
+# or a custom user in brand-specific builds).
 #
 # Commands:
 #   add    <profile> <repo> <branch>   Create an isolated working tree
@@ -266,9 +266,9 @@ Env vars:
   HERMES_REPOS_ROOT  Repos volume root   (default: /opt/repos)
 
 Examples:
-  hermes-worktree add $PROFILE_NAME haverford-dev-api feature/fix-auth
+  hermes-worktree add $PROFILE_NAME my-api feature/fix-auth
   hermes-worktree list
-  hermes-worktree remove $PROFILE_NAME haverford-dev-api
+  hermes-worktree remove $PROFILE_NAME my-api
 USAGE
     exit 1
     ;;
