@@ -33,6 +33,10 @@ const DEFAULT_HERMES_TOOLSETS = Object.freeze(['terminal', 'file', 'web', 'mcp']
 const DEFAULT_COMPANY_SKILL_SLUGS = Object.freeze([
   'gbrain',
   'use-100m-framework',
+  'using-paperclip',
+  'paperclip-org-structure',
+  'git-worktree',
+  'pipeline-workflow',
 ]);
 const DELEGATION_PROTOCOL_PATH = '/data/agent-stack/delegation-protocol.md';
 const DELEGATION_PROTOCOL_FILE = 'DELEGATION_PROTOCOL.md';
