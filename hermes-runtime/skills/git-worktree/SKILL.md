@@ -28,17 +28,15 @@ cd "$WORKTREE"
 
 ### 2. Name your branch correctly
 
-Generic defaults:
-- `feature/<short-description>` — new functionality
-- `fix/<short-description>` — bug fix
+**Pipeline-core governed repos** (any repo with `.github/pipeline-config.yml`):
+Use the `pipeline-workflow` skill before creating a branch — it enforces the
+issue-first sequence and the correct branch format: `<type>/<#>-<slug>` where
+type is one of `bug|story|task|spike|experiment|epic`.
+Example: `task/42-refactor-auth`
+
+**Non-pipeline repos:**
 - `task/<short-description>` — chore or refactor
 - `spike/<short-description>` — investigation
-
-**Pipeline-core governed repos** (any repo with `.github/pipeline-config.yml`):
-Branch names MUST include the GitHub issue number: `<type>/<issue-number>-<slug>`
-Example: `feature/42-add-rate-limiting`
-You must open the GitHub issue BEFORE creating the branch. Check `AGENTS.md` in
-the repo for the exact convention before naming anything.
 
 ### 3. Do the work
 
