@@ -25,12 +25,6 @@ memory:
   user_profile_enabled: true
   memory_char_limit: 2200
   user_char_limit: 1375
-  provider: lightrag
-  lightrag:
-    # llm_model omitted — inherits Hermes primary model (no separate setup needed).
-    # Set explicitly to override, e.g. llm_model: ollama/llama3.2 for fully local.
-    # embedding_model runs locally via sentence-transformers — no API key required.
-    embedding_model: sentence-transformers/all-MiniLM-L6-v2
 
 # Context engine: use compressor to auto-summarise old messages when context fills.
 # Fires at 50% of context window; retains last 20 messages verbatim; targets 20%
