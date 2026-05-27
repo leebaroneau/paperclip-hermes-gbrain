@@ -23,8 +23,17 @@ mcp_servers:
 memory:
   memory_enabled: true
   user_profile_enabled: true
-  memory_char_limit: 2200
+  memory_char_limit: 2000
   user_char_limit: 1375
+  provider: holographic
+
+# Holographic: local SQLite memory store. No API key, no external service.
+# auto_extract: true — automatically extracts facts from conversations at session end.
+# Per-profile isolated (each profile gets its own memory_store.db).
+plugins:
+  hermes-memory-store:
+    auto_extract: true
+    default_trust: 0.5
 
 # Context engine: use compressor to auto-summarise old messages when context fills.
 # Fires at 50% of context window; retains last 20 messages verbatim; targets 20%
