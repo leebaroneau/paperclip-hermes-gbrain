@@ -60,3 +60,10 @@ security:
   allow_private_urls: false
   redact_secrets: true
   tirith_enabled: true
+  approval:
+    denylist:
+      - 'rm\s+-rf\s+/'
+      - 'curl\s+.+\|\s*(sh|bash)'
+      - '169\.254\.169\.254'
+      - 'cat\s+~?/?\.?ssh/'
+      - 'aws\s+s3\s+sync\s+.+\s+s3://'
