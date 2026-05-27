@@ -23,7 +23,7 @@ mcp_servers:
 memory:
   memory_enabled: true
   user_profile_enabled: true
-  memory_char_limit: 2200
+  memory_char_limit: 2000
   user_char_limit: 1375
 
 # Context engine: use compressor to auto-summarise old messages when context fills.
