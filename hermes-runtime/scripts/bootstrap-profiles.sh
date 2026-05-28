@@ -47,6 +47,18 @@ install_hermes_bundled_skills() {
   done
 }
 
+# Remove dangling symlinks anywhere under a profile's skills/ tree.
+# Called on every boot so skills removed from the image don't leave broken
+# links that cause profile-sync.mjs copyTreeMissing to crash with EINVAL.
+prune_dangling_skill_symlinks() {
+  local profile_home="$1"
+  local skills_dir="$profile_home/skills"
+  [[ -d "$skills_dir" ]] || return 0
+  while IFS= read -r -d '' link; do
+    [[ -e "$link" ]] || rm "$link"
+  done < <(find "$skills_dir" -type l -print0 2>/dev/null)
+}
+
 # Symlink agent-stack-shipped skills (e.g. using-paperclip) into every
 # Hermes profile's skills/agent-stack/ directory.
 # pattern. Source dir is baked into the image at /opt/hermes-runtime/skills/.
@@ -353,6 +365,7 @@ for raw_profile in "${profiles[@]}"; do
   fi
   install_hermes_bundled_skills "$profile_home"
   install_agent_stack_skills "$profile_home"
+  prune_dangling_skill_symlinks "$profile_home"
 done
 
 # Sweep any profile homes profile-sync may have created at runtime (per-role
@@ -366,5 +379,6 @@ if [[ -d "$HERMES_DATA_ROOT/profiles" ]]; then
     sync_mcp_servers_from_template "$runtime_profile_home/config.yaml"
     install_agent_stack_skills "$runtime_profile_home"
     strip_provider_keys "$runtime_profile_home/.env"
+    prune_dangling_skill_symlinks "$runtime_profile_home"
   done
 fi
