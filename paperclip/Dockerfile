@@ -3,6 +3,7 @@ FROM node:22-bookworm-slim
 
 ARG PAPERCLIP_VERSION=2026.513.0
 ARG HERMES_AGENT_REF=v2026.5.16
+ARG GH_VERSION=2.52.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PAPERCLIP_HOME=/data
@@ -63,6 +64,15 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
 
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm install -g "paperclipai@${PAPERCLIP_VERSION}"
+
+# Coding CLIs available to all agent profiles with terminal toolset enabled.
+# gh: repo/PR/issue ops; claude-code + codex: coding agent delegation.
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+    | tar xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh" \
+  && npm install -g --no-audit --no-fund \
+       @anthropic-ai/claude-code \
+       @openai/codex-cli
 
 COPY hermes-runtime/scripts /opt/hermes-runtime/scripts
 COPY hermes-runtime/templates /opt/hermes-runtime/templates
