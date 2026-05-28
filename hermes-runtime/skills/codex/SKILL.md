@@ -19,10 +19,16 @@ Delegate coding work to the `codex` CLI subprocess. Codex is best for: fast bug 
 ```bash
 codex "<task description>" \
   --approval-mode full-auto \
+  --config 'mcp_servers."holographic-memory".command="/usr/local/bin/hermes-holo-mcp-wrapper"' \
+  --config 'mcp_servers."holographic-memory".args=[]' \
+  --config 'mcp_servers."holographic-memory".env.PAPERCLIP_HOLO_MEMORY_RECALL_ENABLED="true"' \
+  --config 'mcp_servers."holographic-memory".env.PAPERCLIP_HOLO_MEMORY_RETAIN_ENABLED="true"' \
   2>&1
 ```
 
 Run from the repo root. Codex runs in a sandboxed environment and applies changes directly.
+
+The `hermes-holo-mcp-wrapper` derives `PAPERCLIP_HOLO_MEMORY_DB` from `$HERMES_HOME` automatically so the memory store is always profile-scoped.
 
 ## When to use
 

@@ -1,0 +1,24 @@
+# template-agent MCP catalog entry.
+# Mirrors the NousResearch optional-mcps/ manifest format so it activates
+# natively via `hermes mcp catalog` / `hermes mcp install holographic-memory`
+# once HERMES_AGENT_REF is bumped to a tag that ships mcp_catalog.py (>v2026.5.16).
+manifest_version: 1
+
+name: holographic-memory
+description: Cross-session holographic memory for this Hermes profile — search, add, and recall facts across conversations.
+source: https://github.com/paperclipai/paperclip
+
+transport:
+  type: stdio
+  # hermes-holo-mcp-wrapper derives PAPERCLIP_HOLO_MEMORY_DB from $HERMES_HOME
+  # so the DB is always profile-scoped without manual configuration.
+  command: /usr/local/bin/hermes-holo-mcp-wrapper
+
+auth:
+  type: none
+
+post_install: |
+  No credentials needed. The memory store is automatically scoped to the
+  active Hermes profile via $HERMES_HOME/memory_store.db.
+
+  Start a new Hermes session to load the holographic-memory tools.
