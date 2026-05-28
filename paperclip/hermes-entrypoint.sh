@@ -20,11 +20,11 @@ fi
 
 rm -f /tmp/hermes-entrypoint-ready
 
-mkdir -p "$HERMES_DATA_ROOT" /home/node/.hermes /opt/work /data/.locks
+mkdir -p "$HERMES_DATA_ROOT" /home/node/.hermes /opt/work /data/.locks /data/repos/bare /data/repos/worktrees
 if [[ ! -e /hermes || -L /hermes ]]; then
   ln -sfn /data /hermes
 fi
-chown -R node:node /data /home/node/.hermes /opt/work /opt/repos
+chown -R node:node /data /home/node/.hermes /opt/work
 
 runuser -u node -- flock /data/.locks/bootstrap-profiles.lock /opt/hermes-runtime/scripts/bootstrap-profiles.sh
 
