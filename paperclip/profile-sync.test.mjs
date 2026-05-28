@@ -23,7 +23,7 @@ test('desiredProfileSlug keeps an existing managed profile stable', () => {
   );
 });
 
-test('buildManagedAgentPayload isolates Hermes and GBrain for one profile', () => {
+test('buildManagedAgentPayload isolates Hermes home for one profile', () => {
   const payload = buildManagedAgentPayload({
     agent: {
       name: 'Researcher',
@@ -45,9 +45,9 @@ test('buildManagedAgentPayload isolates Hermes and GBrain for one profile', () =
 
   assert.equal(payload.adapterType, 'hermes_local');
   assert.equal(payload.adapterConfig.env.HERMES_HOME, '/data/hermes/profiles/acme-researcher');
-  assert.equal(payload.adapterConfig.env.GBRAIN_HOME, '/data/gbrain/acme-researcher');
   assert.equal(payload.adapterConfig.env.PAPERCLIP_API_URL, 'http://paperclip:3100');
   assert.equal(payload.adapterConfig.env.KEEP_ME, '1');
+  assert.equal(payload.adapterConfig.timeoutSec, 1800);
   assert.equal(payload.adapterConfig.paperclipApiUrl, 'http://paperclip:3100/api');
   assert.equal(payload.metadata.existing, true);
   assert.equal(payload.metadata.agentStackProfileSlug, 'acme-researcher');
@@ -129,19 +129,140 @@ test('buildManagedAgentPayload normalizes accepted runtime identity Hermes homes
   );
 });
 
-test('buildManagedAgentPayload removes unsupported mcp toolset from existing configs', () => {
+test('buildManagedAgentPayload preserves managed timeouts above the minimum', () => {
   const payload = buildManagedAgentPayload({
     agent: {
-      name: 'Engineer',
+      name: 'Long Runner',
       adapterConfig: {
-        toolsets: 'terminal,file,web,mcp',
+        timeoutSec: 3600,
       },
       metadata: {},
     },
     companyName: 'Acme',
   });
 
-  assert.equal(payload.adapterConfig.toolsets, 'terminal,file,web');
+  assert.equal(payload.adapterConfig.timeoutSec, 3600);
+});
+
+test('buildManagedAgentPayload preserves and dedupes Hermes MCP toolset in existing configs', () => {
+  const payload = buildManagedAgentPayload({
+    agent: {
+      name: 'Engineer',
+      adapterConfig: {
+        toolsets: 'terminal,file,web,mcp,mcp',
+      },
+      metadata: {},
+    },
+    companyName: 'Acme',
+  });
+
+  assert.equal(payload.adapterConfig.toolsets, 'terminal,file,web,mcp');
+});
+
+test('buildManagedAgentPayload enables Hermes MCP toolset for managed agents by default', () => {
+  const payload = buildManagedAgentPayload({
+    agent: {
+      name: 'CTO',
+      adapterConfig: {},
+      metadata: {},
+    },
+    companyName: 'Acme',
+  });
+
+  assert.equal(payload.adapterConfig.toolsets, 'terminal,file,web,mcp');
+});
+
+test('buildManagedAgentPayload persists desired Paperclip skills in adapter config', () => {
+  const payload = buildManagedAgentPayload({
+    agent: {
+      name: 'Researcher',
+      adapterConfig: {
+        paperclipSkillSync: {
+          mode: 'managed',
+          desiredSkills: ['stale-skill'],
+        },
+      },
+      metadata: {},
+    },
+    companyName: 'Acme',
+    desiredSkills: [' research ', 'copywriting', 'research', '', 42],
+  });
+
+  assert.deepEqual(payload.adapterConfig.paperclipSkillSync, {
+    mode: 'managed',
+    desiredSkills: ['research', 'copywriting'],
+  });
+});
+
+test('reconcileAgents creates missing default company skills before syncing desired skills', async () => {
+  const currentSkills = [
+    { key: 'paperclipai/paperclip/paperclip', slug: 'paperclip', name: 'paperclip' },
+  ];
+  const createdSkills = [];
+  const patched = [];
+
+  await reconcileAgents({
+    companies: [{ id: 'co_1', name: 'Acme' }],
+    listAgents: async () => [
+      { id: 'a_1', name: 'Researcher', adapterType: 'hermes_local', adapterConfig: {}, metadata: {} },
+    ],
+    listCompanySkills: async () => currentSkills,
+    ensureCompanySkill: async (_companyId, skill) => {
+      createdSkills.push(skill);
+      const created = { key: `company/${skill.slug}`, slug: skill.slug, name: skill.name };
+      currentSkills.push(created);
+      return created;
+    },
+    patchAgent: async (_agentId, payload) => {
+      patched.push(payload);
+      return payload;
+    },
+    ensureHomes: async ({ profileSlug }) => ({
+      hermesHome: `/tmp/hermes/${profileSlug}`,
+      modelConfig: {},
+    }),
+    writeOrgMirror: async () => {},
+    defaultCompanySkills: [
+      { slug: 'use-100m-framework', name: 'Use 100M Framework', markdown: '# Use 100M\n' },
+    ],
+  });
+
+  assert.deepEqual(createdSkills.map((skill) => skill.slug), ['use-100m-framework']);
+  assert.deepEqual(
+    patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
+    ['paperclipai/paperclip/paperclip', 'company/use-100m-framework'],
+  );
+});
+
+test('reconcileAgents leaves existing default company skills untouched', async () => {
+  const currentSkills = [
+    {
+      key: 'company/use-100m-framework',
+      slug: 'use-100m-framework',
+      name: 'Custom 100M',
+      markdown: '# Locally customised\n',
+    },
+  ];
+  const createdSkills = [];
+
+  await reconcileAgents({
+    companies: [{ id: 'co_1', name: 'Acme' }],
+    listAgents: async () => [],
+    listCompanySkills: async () => currentSkills,
+    ensureCompanySkill: async (_companyId, skill) => {
+      createdSkills.push(skill);
+      return { key: `company/${skill.slug}`, slug: skill.slug, name: skill.name };
+    },
+    patchAgent: async () => {
+      throw new Error('patchAgent should not be called');
+    },
+    writeOrgMirror: async () => {},
+    defaultCompanySkills: [
+      { slug: 'use-100m-framework', name: 'Use 100M Framework', markdown: '# Use 100M\n' },
+    ],
+  });
+
+  assert.deepEqual(createdSkills, []);
 });
 
 test('buildManagedAgentPayload inherits Hermes model settings from the profile config', () => {
@@ -160,6 +281,34 @@ test('buildManagedAgentPayload inherits Hermes model settings from the profile c
 
   assert.equal(payload.adapterConfig.model, 'gpt-5.5');
   assert.equal(payload.adapterConfig.provider, 'openai-codex');
+});
+
+test('buildManagedAgentPayload can keep managed agents on Paperclip model default', () => {
+  const payload = buildManagedAgentPayload({
+    agent: {
+      name: 'CEO',
+      adapterConfig: {
+        model: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        timeoutSec: 60,
+        env: {
+          KEEP_ME: '1',
+        },
+      },
+      metadata: {},
+    },
+    companyName: 'Acme',
+    hermesModelConfig: {
+      model: 'gpt-5.5',
+      provider: 'openai-codex',
+    },
+    hermesModelMode: 'paperclip-default',
+  });
+
+  assert.equal(payload.adapterConfig.model, null);
+  assert.equal(payload.adapterConfig.provider, null);
+  assert.equal(payload.adapterConfig.timeoutSec, 1800);
+  assert.equal(payload.adapterConfig.env.KEEP_ME, '1');
 });
 
 test('buildManagedAgentPayload adds shared operating pointers to capabilities', () => {
@@ -227,19 +376,16 @@ test('buildManagedAgentPayload keeps explicit agent model settings', () => {
   assert.equal(payload.adapterConfig.provider, 'anthropic');
 });
 
-test('ensureProfileHomes creates profile config, soul, and gbrain directory', async () => {
+test('ensureProfileHomes creates profile config, soul, and hermes home', async () => {
   const root = await mkdtemp(join(tmpdir(), 'profile-sync-'));
   try {
     const result = await ensureProfileHomes({
       profileSlug: 'acme-researcher',
       hermesDataRoot: join(root, 'hermes'),
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     assert.equal(result.hermesHome, join(root, 'hermes/profiles/acme-researcher'));
-    assert.equal(result.gbrainHome, join(root, 'gbrain/acme-researcher'));
     // Assert the rendered config.yaml is a faithful copy of the template that
     // ships in-repo. Pinning to the template content (rather than a static
     // '{}\n') stays correct as upstream adds MCP server / memory defaults to
@@ -258,7 +404,6 @@ test('ensureProfileHomes creates profile config, soul, and gbrain directory', as
       await readFile(join(result.hermesHome, 'LEARNING_PROTOCOL.md'), 'utf8'),
       /Learning Protocol/,
     );
-    await stat(result.gbrainHome);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -274,9 +419,7 @@ test('ensureProfileHomes copies default Hermes env into new profiles', async () 
     const result = await ensureProfileHomes({
       profileSlug: 'acme-researcher',
       hermesDataRoot: hermesRoot,
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     assert.equal(await readFile(join(result.hermesHome, '.env'), 'utf8'), 'OPENAI_API_KEY=real-key\n');
@@ -289,25 +432,23 @@ test('ensureProfileHomes clones default Hermes profile files without nested runt
   const root = await mkdtemp(join(tmpdir(), 'profile-sync-'));
   try {
     const hermesRoot = join(root, 'hermes');
-    await mkdir(join(hermesRoot, 'skills', 'gbrain'), { recursive: true });
+    await mkdir(join(hermesRoot, 'skills', 'some-skill'), { recursive: true });
     await mkdir(join(hermesRoot, 'profiles', 'old-agent'), { recursive: true });
     await writeFile(join(hermesRoot, 'SOUL.md'), '# Default Soul\n');
     await writeFile(join(hermesRoot, 'config.yaml'), 'default-config: true\n');
-    await writeFile(join(hermesRoot, 'skills', 'gbrain', 'SKILL.md'), '# Default GBrain Skill\n');
+    await writeFile(join(hermesRoot, 'skills', 'some-skill', 'SKILL.md'), '# Default Skill\n');
     await writeFile(join(hermesRoot, 'profiles', 'old-agent', 'SOUL.md'), '# Do Not Copy\n');
 
     const result = await ensureProfileHomes({
       profileSlug: 'acme-researcher',
       hermesDataRoot: hermesRoot,
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     assert.equal(await readFile(join(result.hermesHome, 'SOUL.md'), 'utf8'), '# Default Soul\n');
     assert.equal(
-      await readFile(join(result.hermesHome, 'skills', 'gbrain', 'SKILL.md'), 'utf8'),
-      '# Default GBrain Skill\n',
+      await readFile(join(result.hermesHome, 'skills', 'some-skill', 'SKILL.md'), 'utf8'),
+      '# Default Skill\n',
     );
     await assert.rejects(
       stat(join(result.hermesHome, 'profiles', 'old-agent', 'SOUL.md')),
@@ -335,9 +476,7 @@ test('ensureProfileHomes does not clone default Hermes runtime databases or sess
     const result = await ensureProfileHomes({
       profileSlug: 'acme-researcher',
       hermesDataRoot: hermesRoot,
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     for (const relativePath of [
@@ -363,9 +502,7 @@ test('ensureProfileHomes pre-creates Hermes well-known subdirs with 0700 perms',
     const result = await ensureProfileHomes({
       profileSlug: 'acme-researcher',
       hermesDataRoot: join(root, 'hermes'),
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     const expected = [
@@ -404,9 +541,7 @@ test('ensureProfileHomes pre-creates well-known subdirs for the default profile 
     const result = await ensureProfileHomes({
       profileSlug: 'default',
       hermesDataRoot: join(root, 'hermes'),
-      gbrainDataRoot: join(root, 'gbrain'),
       templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
     });
 
     // For the default profile, hermesHome === hermesDataRoot (flat layout).
@@ -467,9 +602,7 @@ test('ensureProfileHomes restores broken perms on Hermes well-known subdirs (sel
       ensureProfileHomes({
         profileSlug: 'acme-researcher',
         hermesDataRoot: join(root, 'hermes'),
-        gbrainDataRoot: join(root, 'gbrain'),
         templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-        initGbrain: false,
       });
 
     const first = await callOnce();
@@ -488,44 +621,6 @@ test('ensureProfileHomes restores broken perms on Hermes well-known subdirs (sel
   }
 });
 
-test('ensureProfileHomes copies safe default GBrain skill folders without database files', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'profile-sync-'));
-  try {
-    const defaultGbrain = join(root, 'gbrain', 'default');
-    await mkdir(join(defaultGbrain, 'skills', 'article-enrichment'), { recursive: true });
-    await mkdir(join(defaultGbrain, '.gbrain', 'skills', 'brain-pdf'), { recursive: true });
-    await mkdir(join(defaultGbrain, '.gbrain', 'brain.pglite'), { recursive: true });
-    await writeFile(join(defaultGbrain, 'skills', 'article-enrichment', 'SKILL.md'), '# Article Skill\n');
-    await writeFile(join(defaultGbrain, '.gbrain', 'skills', 'brain-pdf', 'SKILL.md'), '# PDF Skill\n');
-    await writeFile(join(defaultGbrain, '.gbrain', 'brain.pglite', 'PG_VERSION'), '16\n');
-    await writeFile(join(defaultGbrain, '.gbrain', 'config.json'), '{"database_path":"default"}\n');
-    await writeFile(join(defaultGbrain, 'company-memory.md'), '# Do Not Copy Knowledge\n');
-
-    const result = await ensureProfileHomes({
-      profileSlug: 'acme-researcher',
-      hermesDataRoot: join(root, 'hermes'),
-      gbrainDataRoot: join(root, 'gbrain'),
-      templateDir: join(process.cwd(), 'hermes-runtime/templates'),
-      initGbrain: false,
-    });
-
-    assert.equal(
-      await readFile(join(result.gbrainHome, 'skills', 'article-enrichment', 'SKILL.md'), 'utf8'),
-      '# Article Skill\n',
-    );
-    assert.equal(
-      await readFile(join(result.gbrainHome, '.gbrain', 'skills', 'brain-pdf', 'SKILL.md'), 'utf8'),
-      '# PDF Skill\n',
-    );
-    await assert.rejects(stat(join(result.gbrainHome, '.gbrain', 'brain.pglite', 'PG_VERSION')), {
-      code: 'ENOENT',
-    });
-    await assert.rejects(stat(join(result.gbrainHome, '.gbrain', 'config.json')), { code: 'ENOENT' });
-    await assert.rejects(stat(join(result.gbrainHome, 'company-memory.md')), { code: 'ENOENT' });
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
 
 test('reconcileAgents patches hermes_local agents, capability discovery, and managed entries', async () => {
   const apiCalls = [];
@@ -672,6 +767,51 @@ test('reconcileAgents provisions Paperclip runtime identity Hermes homes when pr
       result.manifest.managedAgents[0].hermesHome,
       '/data/instances/default/runtimes/hermes/profiles/paperclip-runtime-researcher',
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('reconcileAgents clears stale Hermes model settings in Paperclip default mode', async () => {
+  const apiCalls = [];
+  const root = await mkdtemp(join(tmpdir(), 'profile-sync-model-default-'));
+  try {
+    await reconcileAgents({
+      companies: [{ id: 'co_1', name: 'Acme, Inc.' }],
+      listAgents: async () => [
+        {
+          id: 'a_1',
+          name: 'Researcher',
+          adapterType: 'hermes_local',
+          adapterConfig: {
+            model: 'claude-sonnet-4-6',
+            provider: 'anthropic',
+            toolsets: 'terminal,file,web',
+          },
+          metadata: {},
+        },
+      ],
+      patchAgent: async (agentId, payload) => {
+        apiCalls.push({ agentId, payload });
+        return { id: agentId, ...payload };
+      },
+      ensureHomes: async ({ profileSlug }) => ({
+        profileSlug,
+        modelConfig: {
+          model: 'gpt-5.5',
+          provider: 'openai-codex',
+        },
+      }),
+      manifest: { managedAgents: [] },
+      paperclipAgentServerUrl: 'http://paperclip:3100',
+      orgMirrorRoot: root,
+      hermesModelMode: 'paperclip-default',
+    });
+
+    assert.equal(apiCalls.length, 1);
+    assert.equal(apiCalls[0].payload.adapterConfig.model, null);
+    assert.equal(apiCalls[0].payload.adapterConfig.provider, null);
+    assert.equal(apiCalls[0].payload.adapterConfig.toolsets, 'terminal,file,web,mcp');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -1105,6 +1245,12 @@ test('reconcileAgents archives managed agents returned as terminated', async () 
 test('profile-sync CLI one-shot provisions homes and patches Paperclip API', async () => {
   const root = await mkdtemp(join(tmpdir(), 'profile-sync-cli-'));
   const patched = [];
+  const createdSkills = [];
+  const companySkills = [
+    { key: 'paperclipai/paperclip/research', slug: 'research', name: 'research' },
+    { slug: 'copywriting', name: 'copywriting' },
+    { name: 'research' },
+  ];
   const server = createServer(async (request, response) => {
     try {
       if (request.method === 'GET' && request.url === '/api/companies') {
@@ -1115,6 +1261,22 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
         return json(response, [
           { id: 'a_1', name: 'Researcher', adapterType: 'hermes_local', adapterConfig: {}, metadata: {} },
         ]);
+      }
+
+      if (request.method === 'GET' && request.url === '/api/companies/co_1/skills') {
+        return json(response, { skills: companySkills });
+      }
+
+      if (request.method === 'POST' && request.url === '/api/companies/co_1/skills') {
+        const body = await readRequestJson(request);
+        createdSkills.push(body);
+        const created = {
+          key: `company/${body.slug}`,
+          slug: body.slug,
+          name: body.name,
+        };
+        companySkills.push(created);
+        return json(response, created);
       }
 
       if (request.method === 'PATCH' && request.url === '/api/agents/a_1') {
@@ -1137,15 +1299,15 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
     const manifestPath = join(root, 'manifest.json');
     const child = await runNode(['paperclip/profile-sync.mjs', 'once'], {
       PROFILE_SYNC_ENABLED: '1',
-      PROFILE_SYNC_SKIP_GBRAIN_INIT: '1',
       PAPERCLIP_PROFILE_SYNC_API_KEY: 'test-key',
       PAPERCLIP_API_BASE: `http://127.0.0.1:${port}`,
       PAPERCLIP_AGENT_API_URL: 'http://127.0.0.1:3100',
       HERMES_DATA_ROOT: join(root, 'hermes'),
-      GBRAIN_DATA_ROOT: join(root, 'gbrain'),
       ORG_MIRROR_ROOT: join(root, 'agent-stack'),
       PROFILE_SYNC_MANIFEST_PATH: manifestPath,
       PROFILE_SYNC_TEMPLATE_DIR: join(process.cwd(), 'hermes-runtime/templates'),
+      PROFILE_SYNC_DEFAULT_COMPANY_SKILL_SOURCE_DIR: join(process.cwd(), 'hermes-runtime/skills'),
+      PROFILE_SYNC_HERMES_MODEL_MODE: 'paperclip-default',
     });
 
     assert.equal(child.code, 0, child.stderr);
@@ -1156,12 +1318,20 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       patched[0].adapterConfig.env.HERMES_HOME,
       join(root, 'hermes/profiles/acme-inc-researcher'),
     );
-    assert.equal(
-      patched[0].adapterConfig.env.GBRAIN_HOME,
-      join(root, 'gbrain/acme-inc-researcher'),
+    assert.deepEqual(
+      patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
+      [
+        'paperclipai/paperclip/research',
+        'copywriting',
+        'research',
+        'company/use-100m-framework',
+      ],
     );
+    assert.deepEqual(createdSkills.map((skill) => skill.slug), ['use-100m-framework']);
+    assert.match(createdSkills[0].markdown, /^---\nname: use-100m-framework/m);
+    assert.equal(patched[0].adapterConfig.model, null);
+    assert.equal(patched[0].adapterConfig.provider, null);
     await stat(join(root, 'hermes/profiles/acme-inc-researcher/config.yaml'));
-    await stat(join(root, 'gbrain/acme-inc-researcher'));
 
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     assert.equal(manifest.managedAgents[0].agentId, 'a_1');

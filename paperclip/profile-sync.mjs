@@ -26,6 +26,22 @@ const DEFAULT_MANIFEST_PATH = '/data/agent-stack/profile-sync/manifest.json';
 const DEFAULT_SYNC_API_BASE = 'http://paperclip:3100';
 const DEFAULT_AGENT_API_URL = 'http://127.0.0.1:3100';
 const DEFAULT_ORG_MIRROR_ROOT = '/data/agent-stack';
+const MIN_MANAGED_TIMEOUT_SEC = 1800;
+const HERMES_MODEL_MODE_INHERIT = 'inherit';
+const HERMES_MODEL_MODE_PAPERCLIP_DEFAULT = 'paperclip-default';
+const DEFAULT_COMPANY_SKILL_SOURCE_DIR = '/opt/hermes-runtime/skills';
+const DEFAULT_HERMES_TOOLSETS = Object.freeze(['terminal', 'file', 'web', 'mcp']);
+const DEFAULT_COMPANY_SKILL_SLUGS = Object.freeze([
+  'use-100m-framework',
+  'using-paperclip',
+  'paperclip-org-structure',
+  'git-worktree',
+  'pipeline-workflow',
+  'claude-code',
+  'codex',
+  'shopify-theme',
+  'shopify-app',
+]);
 const DELEGATION_PROTOCOL_PATH = '/data/agent-stack/delegation-protocol.md';
 const DELEGATION_PROTOCOL_FILE = 'DELEGATION_PROTOCOL.md';
 const DELEGATION_PROTOCOL_POINTER = [
@@ -44,7 +60,6 @@ const LEARNING_PROTOCOL_FILE = 'LEARNING_PROTOCOL.md';
 const LEARNING_PROTOCOL_POINTER = [
   `Learning Protocol: At task start and finish, read ${LEARNING_PROTOCOL_PATH}.`,
   `If that shared file is unavailable, read ${LEARNING_PROTOCOL_FILE} in your HERMES_HOME.`,
-  'Use your role-specific GBRAIN_HOME for durable learned summaries; do not crawl all of /data.',
 ].join(' ');
 const HERMES_TEMPLATE_SKIP_DIRS = new Set([
   'profiles',
@@ -70,16 +85,6 @@ const HERMES_TEMPLATE_SKIP_FILES = new Set([
   'state.db',
 ]);
 const HERMES_SQLITE_SIDECARE_RE = /^(?:state|kanban)\.db-(?:journal|shm|wal)$/;
-const GBRAIN_TEMPLATE_PATHS = [
-  'skills',
-  '.gbrain/skills',
-  '.gbrain/prompts',
-  '.gbrain/conventions',
-  'AGENTS.md',
-  'RESOLVER.md',
-  'gbrain.yml',
-  'gbrain.yaml',
-];
 
 // Canonical list of Hermes well-known subdirs, mirroring upstream
 // hermes_cli/config.py:ensure_hermes_home(). Pre-creating these with stable
@@ -137,10 +142,13 @@ export function buildManagedAgentPayload({
   companyName,
   paperclipAgentServerUrl = DEFAULT_AGENT_API_URL,
   hermesDataRoot = '/data/hermes',
-  gbrainDataRoot = '/data/gbrain',
   hermesModelConfig,
+  hermesModelMode = HERMES_MODEL_MODE_INHERIT,
   capabilityContext,
+  desiredSkills,
 }) {
+  const normalizedHermesModelMode = normalizeHermesModelMode(hermesModelMode);
+  const usePaperclipModelDefault = normalizedHermesModelMode === HERMES_MODEL_MODE_PAPERCLIP_DEFAULT;
   const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
   const runtimeProfileSlug = runtimeIdentityProfileSlug(metadata);
   const profileSlug = desiredProfileSlug(
@@ -159,52 +167,155 @@ export function buildManagedAgentPayload({
   const existingEnv = existingConfig.env && typeof existingConfig.env === 'object'
     ? existingConfig.env
     : {};
+  const {
+    model: _existingModel,
+    provider: _existingProvider,
+    ...existingConfigWithoutModelDefaults
+  } = existingConfig;
+  const existingConfigForPayload = usePaperclipModelDefault
+    ? existingConfigWithoutModelDefaults
+    : existingConfig;
 
   const capabilities = capabilityContext
     ? withCapabilityDiscovery(agent.capabilities, agent, capabilityContext)
     : normalizedCapabilityText(agent.capabilities);
+  const timeoutSec = managedTimeoutSec(existingConfigForPayload.timeoutSec);
+
+  const adapterConfig = {
+    ...(!usePaperclipModelDefault && hermesModelConfig?.model ? { model: hermesModelConfig.model } : {}),
+    ...(!usePaperclipModelDefault && hermesModelConfig?.provider ? { provider: hermesModelConfig.provider } : {}),
+    timeoutSec: MIN_MANAGED_TIMEOUT_SEC,
+    persistSession: true,
+    quiet: true,
+    toolsets: DEFAULT_HERMES_TOOLSETS.join(','),
+    cwd: '/opt/work',
+    ...existingConfigForPayload,
+    timeoutSec,
+    toolsets: normalizeToolsets(existingConfig.toolsets),
+    ...(Array.isArray(desiredSkills)
+      ? { paperclipSkillSync: withDesiredPaperclipSkills(existingConfig.paperclipSkillSync, desiredSkills) }
+      : {}),
+    paperclipApiUrl: withApiSuffix(paperclipServerUrl),
+    env: {
+      ...existingEnv,
+      HERMES_HOME: hermesHome,
+      PAPERCLIP_API_URL: paperclipServerUrl,
+    },
+  };
+
+  if (usePaperclipModelDefault) {
+    adapterConfig.model = null;
+    adapterConfig.provider = null;
+  }
 
   return {
     capabilities: withSharedOperatingPointers(capabilities),
     adapterType: 'hermes_local',
-    adapterConfig: {
-      ...(hermesModelConfig?.model ? { model: hermesModelConfig.model } : {}),
-      ...(hermesModelConfig?.provider ? { provider: hermesModelConfig.provider } : {}),
-      timeoutSec: 1800,
-      persistSession: true,
-      quiet: true,
-      toolsets: 'terminal,file,web',
-      cwd: '/opt/work',
-      ...existingConfig,
-      toolsets: normalizeToolsets(existingConfig.toolsets),
-      paperclipApiUrl: withApiSuffix(paperclipServerUrl),
-      env: {
-        ...existingEnv,
-        HERMES_HOME: hermesHome,
-        GBRAIN_HOME: gbrainHome,
-        PAPERCLIP_API_URL: paperclipServerUrl,
-      },
-    },
+    adapterConfig,
     metadata: {
       ...metadata,
       hermesProfile: profileSlug,
       agentStackProfileSlug: profileSlug,
       agentStackHermesHome: hermesHome,
-      agentStackGbrainHome: gbrainHome,
       managedBy: MANAGED_BY,
     },
   };
 }
 
+function managedTimeoutSec(timeoutSec) {
+  const numericTimeoutSec = Number(timeoutSec);
+  if (!Number.isFinite(numericTimeoutSec)) return MIN_MANAGED_TIMEOUT_SEC;
+  return Math.max(numericTimeoutSec, MIN_MANAGED_TIMEOUT_SEC);
+}
+
+function normalizeHermesModelMode(mode) {
+  const normalized = String(mode || HERMES_MODEL_MODE_INHERIT).trim().toLowerCase();
+  if (!normalized || normalized === HERMES_MODEL_MODE_INHERIT) return HERMES_MODEL_MODE_INHERIT;
+  if (
+    normalized === HERMES_MODEL_MODE_PAPERCLIP_DEFAULT
+    || normalized === 'paperclip_default'
+    || normalized === 'model-default'
+    || normalized === 'model_default'
+    || normalized === 'default'
+  ) {
+    return HERMES_MODEL_MODE_PAPERCLIP_DEFAULT;
+  }
+  throw new Error(
+    `Invalid PROFILE_SYNC_HERMES_MODEL_MODE: ${mode}. Expected inherit or paperclip-default.`,
+  );
+}
+
 function normalizeToolsets(toolsets) {
   const rawToolsets = typeof toolsets === 'string' && toolsets.trim()
     ? toolsets
-    : 'terminal,file,web';
+    : DEFAULT_HERMES_TOOLSETS.join(',');
   const normalized = rawToolsets
     .split(',')
     .map((toolset) => toolset.trim())
-    .filter((toolset) => toolset && toolset !== 'mcp');
-  return [...new Set(normalized)].join(',') || 'terminal,file,web';
+    .filter(Boolean);
+  const withDefaults = [...normalized, ...DEFAULT_HERMES_TOOLSETS];
+  return [...new Set(withDefaults)].join(',');
+}
+
+function withDesiredPaperclipSkills(existingSync, desiredSkills) {
+  const current = existingSync && typeof existingSync === 'object' && !Array.isArray(existingSync)
+    ? existingSync
+    : {};
+  const normalized = desiredSkills
+    .filter((skill) => typeof skill === 'string')
+    .map((skill) => skill.trim())
+    .filter(Boolean);
+  return {
+    ...current,
+    desiredSkills: [...new Set(normalized)],
+  };
+}
+
+async function ensureDefaultCompanySkills({
+  companyId,
+  listedSkills,
+  defaultCompanySkills,
+  ensureCompanySkill,
+}) {
+  const skills = Array.isArray(listedSkills) ? [...listedSkills] : undefined;
+  if (!skills || !Array.isArray(defaultCompanySkills) || defaultCompanySkills.length === 0) {
+    return { skills, created: 0 };
+  }
+  if (typeof ensureCompanySkill !== 'function') return { skills, created: 0 };
+
+  const existing = new Set(skills.flatMap(companySkillIdentityKeys));
+  let created = 0;
+  for (const skill of defaultCompanySkills) {
+    const slug = typeof skill?.slug === 'string' ? skill.slug.trim() : '';
+    if (!slug || existing.has(slug)) continue;
+
+    const createdSkill = await ensureCompanySkill(companyId, {
+      name: skill.name || slug,
+      slug,
+      description: skill.description || null,
+      markdown: skill.markdown || '',
+    });
+    if (createdSkill) created += 1;
+    const nextSkill = createdSkill && typeof createdSkill === 'object'
+      ? createdSkill
+      : { key: `company/${slug}`, slug, name: skill.name || slug };
+    skills.push(nextSkill);
+    for (const key of companySkillIdentityKeys(nextSkill)) existing.add(key);
+  }
+
+  return { skills, created };
+}
+
+function companySkillIdentityKeys(skill) {
+  const keys = [skill?.key, skill?.slug, skill?.name]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(keys.flatMap((value) => {
+    const parts = value.split('/').filter(Boolean);
+    const lastPart = parts[parts.length - 1];
+    return lastPart && lastPart !== value ? [value, lastPart] : [value];
+  }))];
 }
 
 function withSharedOperatingPointers(capabilities) {
@@ -301,7 +412,6 @@ function roleRoutingScope(agent) {
 export async function ensureProfileHomes({
   profileSlug,
   hermesDataRoot = '/data/hermes',
-  gbrainDataRoot = '/data/gbrain',
   templateDir = DEFAULT_TEMPLATE_DIR,
   configSourcePath,
   initGbrain = true,
@@ -317,12 +427,10 @@ export async function ensureProfileHomes({
   const gbrainHome = join(gbrainDataRoot, profileSlug);
 
   await mkdir(hermesHome, { recursive: true });
-  await mkdir(gbrainHome, { recursive: true });
   await ensureHermesSubdirs(hermesHome);
 
   if (profileSlug !== 'default') {
     await cloneDefaultHermesProfile({ hermesDataRoot, hermesHome });
-    await cloneDefaultGbrainTemplate({ gbrainDataRoot, gbrainHome });
   }
 
   // Always (re)install bundled Hermes skills so existing broken profiles self-heal.
@@ -345,6 +453,15 @@ export async function ensureProfileHomes({
     join(hermesHome, 'SOUL.md'),
   );
 
+  // Seed workstation-level ONBOARDING.md into the profile root on first creation.
+  // The agent's SOUL instructs it to complete the file on first session, then delete it.
+  // No-op when /data/ONBOARDING.md doesn't exist (workstation hasn't seeded one) or when
+  // the profile already has ONBOARDING.md (mid-onboarding or completed + deleted by agent).
+  await copyIfSourceExists(
+    join(hermesDataRoot, '..', 'ONBOARDING.md'),
+    join(hermesHome, 'ONBOARDING.md'),
+  );
+
   await copyFirstExistingIfMissing(
     [
       join(templateDir, DELEGATION_PROTOCOL_FILE),
@@ -364,16 +481,8 @@ export async function ensureProfileHomes({
   await copyIfSourceExists(join(hermesDataRoot, '.env'), join(hermesHome, '.env'));
   await writeProviderEnvFile(join(hermesHome, '.env'));
 
-  if (initGbrain && !(await exists(join(gbrainHome, '.gbrain', 'config.json')))) {
-    await runCommand('gbrain', ['init', '--pglite'], { GBRAIN_HOME: gbrainHome });
-    await runCommand('gbrain', ['config', 'set', 'search.mode', 'conservative'], {
-      GBRAIN_HOME: gbrainHome,
-    }, { allowFailure: true });
-  }
-
   return {
     hermesHome,
-    gbrainHome,
     modelConfig: await readHermesModelConfig(join(hermesHome, 'config.yaml')),
   };
 }
@@ -381,18 +490,15 @@ export async function ensureProfileHomes({
 export async function retireProfileHomes({
   profileSlug,
   hermesDataRoot = '/data/hermes',
-  gbrainDataRoot = '/data/gbrain',
   deleteMode = 'archive',
 }) {
   assertSafeSlug(profileSlug);
   if (profileSlug === 'default' || deleteMode === 'ignore') return;
 
   const hermesHome = join(hermesDataRoot, 'profiles', profileSlug);
-  const gbrainHome = join(gbrainDataRoot, profileSlug);
 
   if (deleteMode === 'purge') {
     await rm(hermesHome, { recursive: true, force: true });
-    await rm(gbrainHome, { recursive: true, force: true });
     return;
   }
 
@@ -402,12 +508,13 @@ export async function retireProfileHomes({
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   await moveIfExists(hermesHome, join(hermesDataRoot, 'archive', `${profileSlug}-${stamp}`));
-  await moveIfExists(gbrainHome, join(gbrainDataRoot, 'archive', `${profileSlug}-${stamp}`));
 }
 
 export async function reconcileAgents({
   companies,
   listAgents,
+  listCompanySkills,
+  ensureCompanySkill,
   patchAgent,
   patchAgentPermissions,
   ensureHomes = ensureProfileHomes,
@@ -417,12 +524,13 @@ export async function reconcileAgents({
   deleteMode = 'archive',
   paperclipAgentServerUrl = DEFAULT_AGENT_API_URL,
   hermesDataRoot = '/data/hermes',
-  gbrainDataRoot = '/data/gbrain',
   templateDir = DEFAULT_TEMPLATE_DIR,
   orgMirrorRoot = DEFAULT_ORG_MIRROR_ROOT,
-  initGbrain = true,
   grantManagerAssignTasks = true,
+  hermesModelMode = HERMES_MODEL_MODE_INHERIT,
+  defaultCompanySkills = [],
 }) {
+  const normalizedHermesModelMode = normalizeHermesModelMode(hermesModelMode);
   const now = new Date().toISOString();
   const previous = Array.isArray(manifest.managedAgents) ? manifest.managedAgents : [];
   const previousByAgent = new Map(previous.map((entry) => [entry.agentId, entry]));
@@ -438,6 +546,7 @@ export async function reconcileAgents({
   let permissioned = 0;
   let revoked = 0;
   let provisioned = 0;
+  let companySkillsCreated = 0;
 
   for (const company of companies) {
     scannedCompanies.add(company.id);
@@ -445,6 +554,17 @@ export async function reconcileAgents({
     const companyName = company.name || company.shortName || company.id;
     const activeAgents = agents.filter((agent) => !isRetiredAgent(agent));
     const directReportCounts = countDirectReports(activeAgents);
+    const listedSkills = typeof listCompanySkills === 'function'
+      ? await listCompanySkills(company.id)
+      : undefined;
+    const ensuredSkills = await ensureDefaultCompanySkills({
+      companyId: company.id,
+      listedSkills,
+      defaultCompanySkills,
+      ensureCompanySkill,
+    });
+    companySkillsCreated += ensuredSkills.created;
+    const desiredSkills = Array.isArray(ensuredSkills.skills) ? normalizeSkillKeys(ensuredSkills.skills) : undefined;
     const orgAgents = [];
 
     for (let agent of agents) {
@@ -521,9 +641,7 @@ export async function reconcileAgents({
           profileSlug,
           hermesHome: runtimeHermesHome,
           hermesDataRoot,
-          gbrainDataRoot,
           templateDir,
-          initGbrain,
         });
         provisioned += 1;
 
@@ -538,9 +656,10 @@ export async function reconcileAgents({
           companyName,
           paperclipAgentServerUrl,
           hermesDataRoot,
-          gbrainDataRoot,
           hermesModelConfig: homes.modelConfig,
+          hermesModelMode: normalizedHermesModelMode,
           capabilityContext,
+          desiredSkills,
         });
         const managedResult = await patchAgent(agent.id, payload);
         agent = mergeAgentPatch(agent, managedResult || payload);
@@ -554,7 +673,6 @@ export async function reconcileAgents({
           agentName: agent.name,
           profileSlug,
           hermesHome: homes.hermesHome || payload.metadata.agentStackHermesHome,
-          gbrainHome: homes.gbrainHome || payload.metadata.agentStackGbrainHome,
           createdAt: previousEntry?.createdAt || now,
           lastSeenAt: now,
         });
@@ -584,7 +702,6 @@ export async function reconcileAgents({
     await retireHomes({
       ...entry,
       hermesDataRoot,
-      gbrainDataRoot,
       deleteMode,
     });
     retired += 1;
@@ -603,6 +720,7 @@ export async function reconcileAgents({
     revoked,
     provisioned,
     retired,
+    companySkillsCreated,
     manifest: {
       version: 1,
       updatedAt: now,
@@ -827,6 +945,17 @@ function normalizeStringList(value) {
   return undefined;
 }
 
+function normalizeSkillKeys(skills) {
+  return [...new Set(skills
+    .map((skill) => {
+      if (typeof skill === 'string') return skill;
+      if (!skill || typeof skill !== 'object') return '';
+      return firstNonEmpty(skill.key, skill.slug, skill.name, skill.id) || '';
+    })
+    .map((skill) => String(skill).trim())
+    .filter(Boolean))];
+}
+
 function compactObject(object) {
   return Object.fromEntries(
     Object.entries(object).filter(([, value]) => {
@@ -1025,19 +1154,6 @@ function isHermesRuntimeTemplateFile(relativePath) {
     || fileName.endsWith('.log');
 }
 
-async function cloneDefaultGbrainTemplate({ gbrainDataRoot, gbrainHome }) {
-  const defaultGbrainHome = join(gbrainDataRoot, 'default');
-  if (defaultGbrainHome === gbrainHome || !(await exists(defaultGbrainHome))) return;
-
-  for (const relativePath of GBRAIN_TEMPLATE_PATHS) {
-    await copyTreeMissing(
-      join(defaultGbrainHome, ...relativePath.split('/')),
-      join(gbrainHome, ...relativePath.split('/')),
-      () => false,
-    );
-  }
-}
-
 async function installBundledHermesSkills(hermesHome) {
   const src = process.env.HERMES_BUNDLED_SKILLS_SOURCE || '/usr/local/lib/hermes-agent/skills';
   if (!(await exists(src))) return;
@@ -1194,6 +1310,7 @@ function extractArray(response) {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.companies)) return response.companies;
   if (Array.isArray(response?.agents)) return response.agents;
+  if (Array.isArray(response?.skills)) return response.skills;
   if (Array.isArray(response?.data)) return response.data;
   return [];
 }
@@ -1240,6 +1357,55 @@ async function resolveCompanies({ api, companyIds, configuredCompanies }) {
   })).filter((company) => company.id);
 }
 
+async function loadDefaultCompanySkillsFromEnv() {
+  const slugs = parseDefaultCompanySkillSlugs(
+    envValue('PROFILE_SYNC_DEFAULT_COMPANY_SKILLS', DEFAULT_COMPANY_SKILL_SLUGS.join(',')),
+  );
+  if (slugs.length === 0) return [];
+
+  const sourceDir = envValue('PROFILE_SYNC_DEFAULT_COMPANY_SKILL_SOURCE_DIR', DEFAULT_COMPANY_SKILL_SOURCE_DIR);
+  const skills = [];
+  for (const slug of slugs) {
+    const skillPath = join(sourceDir, slug, 'SKILL.md');
+    try {
+      const markdown = await readFile(skillPath, 'utf8');
+      skills.push({
+        slug,
+        name: skillDisplayName(markdown, slug),
+        description: skillDescription(markdown),
+        markdown,
+      });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      console.warn(`Default company skill ${slug} not found at ${skillPath}; skipping`);
+    }
+  }
+  return skills;
+}
+
+function parseDefaultCompanySkillSlugs(value) {
+  const raw = String(value || '').trim();
+  if (!raw || /^(0|false|no|off|none)$/i.test(raw)) return [];
+  return [...new Set(raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function skillDisplayName(markdown, slug) {
+  const parsedName = frontmatterField(markdown, 'name');
+  return parsedName || slug;
+}
+
+function skillDescription(markdown) {
+  return frontmatterField(markdown, 'description') || null;
+}
+
+function frontmatterField(markdown, field) {
+  const match = String(markdown || '').match(new RegExp(`^${field}:\\s*['"]?([^'"\\n]+)['"]?\\s*$`, 'mi'));
+  return match ? match[1].trim() : '';
+}
+
 async function runOnceFromEnv() {
   const apiKey = envValue('PAPERCLIP_PROFILE_SYNC_API_KEY') || envValue('PAPERCLIP_API_KEY');
   if (!apiKey) {
@@ -1258,21 +1424,49 @@ async function runOnceFromEnv() {
   const companies = await resolveCompanies({ api, companyIds, configuredCompanies });
   const manifestPath = envValue('PROFILE_SYNC_MANIFEST_PATH', DEFAULT_MANIFEST_PATH);
   const manifest = await readManifest(manifestPath);
+  const defaultCompanySkills = await loadDefaultCompanySkillsFromEnv();
 
   const result = await reconcileAgents({
     companies,
     listAgents: async (companyId) => extractArray(await api('GET', `/api/companies/${companyId}/agents`)),
+    listCompanySkills: async (companyId) => {
+      try {
+        return extractArray(await api('GET', `/api/companies/${companyId}/skills`));
+      } catch (error) {
+        if (String(error?.message || '').includes(`GET /api/companies/${companyId}/skills failed with 404:`)) {
+          console.warn(`Company skills endpoint is unavailable for ${companyId}; leaving desired skill sync unchanged`);
+          return undefined;
+        }
+        throw error;
+      }
+    },
+    ensureCompanySkill: async (companyId, skill) => {
+      try {
+        return await api('POST', `/api/companies/${companyId}/skills`, {
+          name: skill.name,
+          slug: skill.slug,
+          description: skill.description || null,
+          markdown: skill.markdown || '',
+        });
+      } catch (error) {
+        if (String(error?.message || '').includes(`POST /api/companies/${companyId}/skills failed with 409:`)) {
+          console.warn(`Default company skill ${skill.slug} already exists for ${companyId}; leaving it unchanged`);
+          return null;
+        }
+        throw error;
+      }
+    },
     patchAgent: async (agentId, payload) => await api('PATCH', `/api/agents/${agentId}`, payload),
     patchAgentPermissions: async (agentId, payload) => await api('PATCH', `/api/agents/${agentId}/permissions`, payload),
     manifest,
     deleteMode: envValue('PROFILE_SYNC_DELETE_MODE', 'archive'),
     paperclipAgentServerUrl: envValue('PAPERCLIP_AGENT_API_URL', DEFAULT_AGENT_API_URL),
     hermesDataRoot: envValue('HERMES_DATA_ROOT', '/data/hermes'),
-    gbrainDataRoot: envValue('GBRAIN_DATA_ROOT', '/data/gbrain'),
     templateDir: envValue('PROFILE_SYNC_TEMPLATE_DIR', DEFAULT_TEMPLATE_DIR),
     orgMirrorRoot: envValue('ORG_MIRROR_ROOT', DEFAULT_ORG_MIRROR_ROOT),
-    initGbrain: !envBool('PROFILE_SYNC_SKIP_GBRAIN_INIT', false),
     grantManagerAssignTasks: envBool('PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS', true),
+    hermesModelMode: envValue('PROFILE_SYNC_HERMES_MODEL_MODE', HERMES_MODEL_MODE_INHERIT),
+    defaultCompanySkills,
   });
   const toolAccessSummaries = envBool('TOOL_ACCESS_SEED_ENABLED', true)
     ? await seedToolAccessForCompanies({
@@ -1293,6 +1487,7 @@ async function runOnceFromEnv() {
     permissioned: result.permissioned,
     revoked: result.revoked,
     retired: result.retired,
+    companySkillsCreated: result.companySkillsCreated,
     managedAgents: result.manifest.managedAgents.length,
     permissionedAgents: result.manifest.permissionedAgents.length,
     toolAccess: {

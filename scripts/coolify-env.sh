@@ -11,21 +11,20 @@ if [[ -z "$domain" ]]; then
 fi
 
 paperclip_fqdn="paperclip.${domain}"
-hermes_fqdn="hermes.${domain}"
 
 cat <<EOF
-COMPOSE_PROJECT_NAME=paperclip-hermes-gbrain
-AGENT_STACK_IMAGE=paperclip-hermes-gbrain:blank
+COMPOSE_PROJECT_NAME=template-agent
+TEMPLATE_AGENT_IMAGE=ghcr.io/leebaroneau/template-agent:sha-\$SOURCE_COMMIT
 PAPERCLIP_PORT=3100
 HERMES_PORT=9119
 PAPERCLIP_PUBLIC_URL=${scheme}://${paperclip_fqdn}
 PAPERCLIP_ALLOWED_HOSTNAMES=${paperclip_fqdn},localhost,127.0.0.1
 PAPERCLIP_HOSTNAME=${paperclip_fqdn}
-HERMES_HOSTNAME=${hermes_fqdn}
+HERMES_DASHBOARD_ENABLED=0
 HERMES_DASHBOARD_TUI=1
 HERMES_DASHBOARD_SKIP_BUILD=1
 HERMES_PROFILES=default
-PROFILE_SYNC_ENABLED=0
+PROFILE_SYNC_ENABLED=1
 PROFILE_SYNC_INTERVAL_SEC=60
 PROFILE_SYNC_DELETE_MODE=archive
 PROFILE_SYNC_GRANT_MANAGER_ASSIGN_TASKS=1
@@ -41,6 +40,5 @@ PAPERCLIP_VERSION=2026.513.0
 PAPERCLIP_GIT_REPO=https://github.com/paperclipai/paperclip.git
 PAPERCLIP_GIT_REF=refs/pull/6243/head
 HERMES_AGENT_REF=main
-GBRAIN_REF=master
 PAPERCLIP_TELEMETRY_DISABLED=1
 EOF

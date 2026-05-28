@@ -11,12 +11,24 @@ check_absent() {
   local pattern="$2"
   local description="$3"
 
-  if grep -nE "$pattern" "$file" >/tmp/paperclip-hermes-gbrain-blank-matches.$$ 2>/dev/null; then
+  if grep -nE "$pattern" "$file" >/tmp/template-agent-blank-matches.$$ 2>/dev/null; then
     echo "Unexpected template content in $file: $description" >&2
-    cat /tmp/paperclip-hermes-gbrain-blank-matches.$$ >&2
+    cat /tmp/template-agent-blank-matches.$$ >&2
     failed=1
   fi
-  rm -f /tmp/paperclip-hermes-gbrain-blank-matches.$$
+  rm -f /tmp/template-agent-blank-matches.$$
+}
+
+check_present() {
+  local file="$1"
+  local pattern="$2"
+  local description="$3"
+
+  if ! grep -nE "$pattern" "$file" >/tmp/template-agent-present-matches.$$ 2>/dev/null; then
+    echo "Missing expected template content in $file: $description" >&2
+    failed=1
+  fi
+  rm -f /tmp/template-agent-present-matches.$$
 }
 
 for file in \
@@ -26,6 +38,7 @@ for file in \
   "paperclip/Dockerfile" \
   "paperclip/entrypoint.sh" \
   "paperclip/hermes-entrypoint.sh" \
+  ".github/workflows/build-image.yml" \
   "hermes-runtime/templates/SOUL.default.md" \
   "scripts/coolify-env.sh" \
   "scripts/local-up.sh" \
@@ -36,13 +49,13 @@ for file in \
   # "leebarone.dev" but NOT the shared image registry user "leebaroneau"
   # in `ghcr.io/leebaroneau/template-agent:latest`, which is the
   # canonical image all three deployments pull from (see README).
-  check_absent "$file" 'Lee'\''s|\bleebarone\b|haverford|alx-finance|paperclip\.leebarone\.dev|hermes\.leebarone\.dev|HERMES_BRIDGE_TOKEN' "template should not include live client or deployment values"
+  check_absent "$file" 'Lee'\''s|\bleebarone\b|haverford|alx-finance|paperclip\.leebarone\.dev|hermes\.leebarone\.dev|HERMES_BRIDGE_TOKEN|SERVICE_FQDN_|SERVICE_URL_|COOLIFY_FQDN' "template should not include live client or deployment values"
+  check_absent "$file" 'AGENT_STACK_''IMAGE' "template should not reference legacy registry image identity"
 done
 
 for expected in \
   "^data/$" \
   "^instances/$" \
-  "^gbrain/$" \
   "^hermes/$"; do
   if ! grep -nE "$expected" .dockerignore >/dev/null 2>&1; then
     echo ".dockerignore should exclude runtime path matching $expected" >&2
@@ -117,6 +130,21 @@ if ! grep -nE '/data/agent-stack/important-information-index\.md' paperclip/entr
   echo "Paperclip entrypoint should seed the important information index into /data." >&2
   failed=1
 fi
+
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '^name: use-100m-framework$' "bundled 100m application skill should exist"
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" '100m-field-learning' "100m skill should define field-learning proposal capture"
+check_present "hermes-runtime/skills/use-100m-framework/SKILL.md" 'Do not edit shared framework doctrine directly' "company profiles should not mutate shared doctrine"
+check_present "paperclip/learning-protocol.md" 'type: 100m-field-learning' "canonical learning protocol should define 100m field-learning pages"
+check_present "hermes-runtime/templates/LEARNING_PROTOCOL.md" 'type: 100m-field-learning' "profile fallback learning protocol should define 100m field-learning pages"
+check_present "README.md" '100M Framework Learning Loop' "README should link the framework learning loop operations doc"
+check_present "hermes-runtime/skills/use-eos-framework/SKILL.md" '^name: use-eos-framework$' "bundled EOS application skill should exist"
+check_present "hermes-runtime/skills/use-eos-framework/SKILL.md" 'eos-field-learning' "EOS skill should define field-learning proposal capture"
+check_present "hermes-runtime/skills/use-eos-framework/SKILL.md" 'paperclip_create_issue' "EOS skill should use Paperclip issue creation"
+check_present "hermes-runtime/skills/use-eos-framework/SKILL.md" 'use-100m-framework' "EOS skill should compose with the 100m framework"
+check_present "hermes-runtime/skills/use-eos-framework/SKILL.md" 'routine setup issue' "EOS skill should avoid claiming unavailable routine creation"
+check_present "paperclip/learning-protocol.md" 'type: eos-field-learning' "canonical learning protocol should define EOS field-learning pages"
+check_present "hermes-runtime/templates/LEARNING_PROTOCOL.md" 'type: eos-field-learning' "profile fallback learning protocol should define EOS field-learning pages"
+check_present "README.md" 'EOS Framework Runtime Skill' "README should document the EOS runtime skill"
 
 if [[ "$failed" -ne 0 ]]; then
   exit 1

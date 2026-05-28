@@ -9,3 +9,5 @@ hermes/
 backups/
 *.tar
 *.tar.gz
+
+.worktrees/

@@ -31,8 +31,8 @@ const LEARNING_PROTOCOL_FILE = 'LEARNING_PROTOCOL.md';
 const LEARNING_PROTOCOL_POINTER = [
   `Learning Protocol: At task start and finish, read ${LEARNING_PROTOCOL_PATH}.`,
   `If that shared file is unavailable, read ${LEARNING_PROTOCOL_FILE} in your HERMES_HOME.`,
-  'Use your role-specific GBRAIN_HOME for durable learned summaries; do not crawl all of /data.',
 ].join(' ');
+const DEFAULT_HERMES_TOOLSETS = 'terminal,file,web,mcp';
 
 const roles = [
   {
@@ -40,7 +40,7 @@ const roles = [
     name: 'Hermes',
     role: 'assistant',
     title: 'Hermes Agent',
-    capabilities: 'Runs Hermes with the default profile and shared GBrain home.',
+    capabilities: 'Runs Hermes with the default profile.',
   },
 ];
 
@@ -164,12 +164,11 @@ function adapterConfig(profile) {
     timeoutSec: 1800,
     persistSession: true,
     quiet: true,
-    toolsets: 'terminal,file,web',
+    toolsets: DEFAULT_HERMES_TOOLSETS,
     cwd: '/opt/work',
     paperclipApiUrl: paperclipAgentApiUrl,
     env: {
       HERMES_HOME: hermesHome,
-      GBRAIN_HOME: `/data/gbrain/${profile}`,
       PAPERCLIP_API_URL: paperclipAgentServerUrl,
     },
   };
