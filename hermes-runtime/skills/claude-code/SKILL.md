@@ -17,15 +17,25 @@ Delegate coding work to the `claude` CLI subprocess. Claude Code is best for: mu
 ## Invocation
 
 ```bash
+# Generate profile-scoped MCP config (holographic memory + active mcp_servers from config.yaml)
+_MCP_CFG=$(hermes-gen-mcp-config)
+
 claude -p "<task description>" \
   --plugin-dir /opt/plugins/superpowers \
-  --allowedTools "Read,Edit,Write,Bash,Glob,Grep" \
+  --mcp-config "$_MCP_CFG" \
+  --allowedTools "Read,Edit,Write,Bash,Glob,Grep,mcp__holographic-memory__*,mcp__paperclip__*" \
   --max-turns 20 \
   --output-format json \
   2>&1
+
+rm -f "$_MCP_CFG"
 ```
 
 Run from the repo root. Capture stdout. Parse the JSON result for the `result` field and any file diffs.
+
+The MCP config gives Claude Code access to:
+- **holographic-memory**: read/write the same memory store Hermes uses (profile-scoped to `$HERMES_HOME/memory_store.db`)
+- **paperclip** (and any other enabled `mcp_servers`): all tools Hermes has access to
 
 ## When to use
 

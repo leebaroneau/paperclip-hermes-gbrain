@@ -1,0 +1,37 @@
+# template-agent MCP catalog entry.
+# Mirrors the NousResearch optional-mcps/ manifest format so it activates
+# natively via `hermes mcp catalog` / `hermes mcp install paperclip` once
+# HERMES_AGENT_REF is bumped to a tag that ships mcp_catalog.py (>v2026.5.16).
+manifest_version: 1
+
+name: paperclip
+description: Paperclip workspace — read/write tasks, issues, approvals, and agent coordination.
+source: https://github.com/paperclipai/paperclip
+
+transport:
+  type: stdio
+  command: node
+  args:
+    - /opt/paperclip/mcp-paperclip/server.mjs
+
+auth:
+  type: api_key
+  env:
+    - name: PAPERCLIP_API_KEY
+      prompt: "Paperclip API key (Settings → API keys)"
+      required: true
+      secret: true
+    - name: PAPERCLIP_API_BASE
+      prompt: "Paperclip base URL (e.g. https://paperclip.yourcompany.com)"
+      required: true
+      secret: false
+    - name: PAPERCLIP_DEFAULT_COMPANY_ID
+      prompt: "Default company ID (visible in Paperclip Settings)"
+      required: true
+      secret: false
+
+post_install: |
+  The Paperclip MCP server is pre-built into this image at
+  /opt/paperclip/mcp-paperclip/server.mjs — no install step needed.
+
+  Start a new Hermes session to load the Paperclip tools.

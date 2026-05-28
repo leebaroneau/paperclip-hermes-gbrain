@@ -93,7 +93,8 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
   && npm install -g --no-audit --no-fund \
        @anthropic-ai/claude-code \
        @openai/codex \
-       @shopify/cli
+       @shopify/cli \
+       paperclip-plugin-holographic-memory
 
 # Pre-install obra/superpowers methodology skills for Claude Code and Codex subagents.
 # Baked into the image because /home/node/.claude and /home/node/.codex are NOT on the
@@ -106,6 +107,18 @@ RUN git clone --depth 1 https://github.com/obra/superpowers /opt/plugins/superpo
       ln -sfn "$skill_dir" "/home/node/.codex/skills/$(basename "$skill_dir")"; \
     done \
  && chown -R node:node /home/node/.codex
+
+COPY paperclip/hermes-gen-mcp-config.py /usr/local/bin/hermes-gen-mcp-config
+COPY paperclip/hermes-holo-mcp-wrapper.sh /usr/local/bin/hermes-holo-mcp-wrapper
+RUN chmod +x /usr/local/bin/hermes-gen-mcp-config /usr/local/bin/hermes-holo-mcp-wrapper
+
+# Pre-stage custom MCP catalog manifests into the Hermes optional-mcps/ directory.
+# Becomes discoverable via `hermes mcp catalog` / `hermes mcp install` once
+# HERMES_AGENT_REF is bumped to a tag that ships mcp_catalog.py (>v2026.5.16).
+# cp -rn: never overwrites upstream entries of the same name.
+COPY hermes-runtime/optional-mcps /opt/hermes-runtime/optional-mcps
+RUN mkdir -p /usr/local/lib/hermes-agent/optional-mcps \
+ && cp -rn /opt/hermes-runtime/optional-mcps/. /usr/local/lib/hermes-agent/optional-mcps/
 
 COPY hermes-runtime/scripts /opt/hermes-runtime/scripts
 COPY hermes-runtime/templates /opt/hermes-runtime/templates
