@@ -35,6 +35,20 @@ fi
 
 node /opt/paperclip/patch-hermes-profile-skill-count.mjs
 
+# ── Hermes-repos auto-setup ──────────────────────────────────────────────────
+# If REPO_ACCESS_CONFIG points to a repo-access.yml, clone any missing bare
+# repos and sync REPOS= into all profile .env files. Non-fatal: warnings are
+# logged but Hermes still starts if setup fails.
+REPO_ACCESS_CONFIG="${REPO_ACCESS_CONFIG:-/config/repo-access.yml}"
+if [[ -f "$REPO_ACCESS_CONFIG" ]]; then
+  echo "[hermes-repos] Config found at $REPO_ACCESS_CONFIG — running setup..."
+  /opt/hermes-runtime/scripts/setup-repos-from-yaml.sh --config "$REPO_ACCESS_CONFIG" \
+    || echo "[hermes-repos] WARN: setup-repos-from-yaml.sh failed — check logs above"
+  /opt/hermes-runtime/scripts/sync-repos-local.sh --config "$REPO_ACCESS_CONFIG" \
+    || echo "[hermes-repos] WARN: sync-repos-local.sh failed — check logs above"
+  echo "[hermes-repos] Setup complete."
+fi
+
 profile_has_gateway_env() {
   local profile_home="$1"
   local env_file="$profile_home/.env"
