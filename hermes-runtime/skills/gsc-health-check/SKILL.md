@@ -1,6 +1,6 @@
 ---
 name: gsc-health-check
-description: Weekly Google Search Console health probe. Fetches coverage errors, indexing issues, Core Web Vitals failures, and search performance delta. Ranks findings by revenue impact and creates a Paperclip issue when actionable problems exist.
+description: Weekly Google Search Console health probe. On first run, interactively asks the operator for the brands gateway URL and credentials, saves them, and optionally customises which brands to include. On subsequent runs, loads saved config and runs fully automatically. Ranks findings by revenue impact and creates a Paperclip issue when actionable problems exist.
 triggers:
   - "GSC"
   - "Google Search Console"
@@ -8,120 +8,161 @@ triggers:
   - "indexing errors"
   - "coverage errors"
   - "site health check"
+  - "gsc setup"
 ---
 
 # GSC Health Check
 
-Run this skill on a weekly cron schedule. It reads configured GSC properties, fetches current health data, ranks findings by revenue impact, writes a GBrain report, and creates a Paperclip issue when actionable problems are found.
+Run this skill on a weekly cron schedule, or invoke it manually with `/gsc setup` to configure.
 
-## Required Environment Variables
+On first run (no saved config), the skill enters interactive setup and asks the operator for the brands gateway URL and GSC credentials. On all subsequent runs it loads the saved config and runs automatically.
 
-The operator must supply these at runtime. They are never stored in the template.
+## Config File
 
+Saved to `/data/agent-stack/config/gsc-health-check.json`. The skill reads and writes this file. It is never committed to the template — it lives only in the org's persistent data volume.
+
+```json
+{
+  "brands_api_url": "https://your-api.example.com/api/internal/brands",
+  "brands_client_id": "...",
+  "brands_client_secret": "...",
+  "gsc_service_account_json_b64": "...",
+  "issue_threshold": 1,
+  "brand_overrides": {
+    "brand-slug": {
+      "enabled": true,
+      "notify_channel": "slack:#brand-alerts"
+    }
+  }
+}
 ```
-GSC_SERVICE_ACCOUNT_JSON   Base64-encoded Google service account JSON with Search Console read scope
-GSC_PROPERTY_URLS          Comma-separated list of Search Console property URLs to check
-GSC_ISSUE_THRESHOLD        Minimum number of findings before creating a Paperclip issue (default: 1)
-```
-
-If any required variable is missing or empty, stop and write a single-line error report to `/data/agent-stack/reports/gsc/error-<date>.md` explaining which variable is missing. Do not proceed.
 
 ## Run Steps
 
-### 1. Decode credentials
+### Step 1: Load or create config
 
-Decode `GSC_SERVICE_ACCOUNT_JSON` from base64 and write to a temp file. Use it for all API calls in this session. Delete it at the end of the run.
+Check whether `/data/agent-stack/config/gsc-health-check.json` exists.
 
-### 2. Fetch data for each property
+**If the config file does not exist → enter interactive setup (Step 2).**
 
-For each URL in `GSC_PROPERTY_URLS`, call the Google Search Console APIs:
+If it exists, load it and skip to Step 3.
 
-- **URL Inspection / Index Coverage API** — fetch pages with status `Excluded`, `Error`, or `Valid with warnings`. Limit to 50 most recent.
-- **Search Analytics API** — fetch clicks, impressions, CTR, and average position for the last 7 days vs the prior 7 days. Group by page.
-- **Core Web Vitals** — fetch CrUX field data if available via the `searchanalytics` endpoint. Flag pages with `SLOW` LCP, FID, or CLS.
+### Step 2: Interactive setup (first run only)
 
-### 3. Rank findings by revenue impact
+Ask the operator the following questions in order. Wait for each answer before proceeding.
+
+1. **Brands gateway URL**
+   > "What is the URL of your brands gateway API endpoint? This is the endpoint that returns your brand registry — for example `https://your-api.example.com/api/internal/brands`."
+
+2. **Gateway credentials**
+   > "What are the internal client ID and secret for the brands gateway? I'll store these securely in the data volume config file — they will not be committed to the template."
+
+3. **GSC service account**
+   > "Please paste your Google Search Console service account JSON (base64-encoded). If you have the raw JSON file, run `base64 -i service-account.json | tr -d '\n'` to encode it first."
+
+4. **Issue creation threshold**
+   > "How many findings should trigger a Paperclip issue? Enter 0 to always create one, or a number like 3 to only create issues when findings are significant. Default is 1."
+
+5. **Brand overrides (optional)**
+   > "Would you like to customise any brands — for example, disable a specific brand from the check, or route its alerts to a different Slack channel? If yes, tell me which brands and what settings. Otherwise say 'no' to use defaults for all brands."
+
+After collecting all answers, write the config to `/data/agent-stack/config/gsc-health-check.json` and confirm:
+> "Config saved. I'll now run the first health check across all your brands."
+
+Then continue to Step 3.
+
+### Step 3: Discover brands from the gateway
+
+Call `GET <brands_api_url>` with headers:
+```
+x-internal-client-id: <brands_client_id>
+x-internal-client-secret: <brands_client_secret>
+```
+
+Extract all brand/region pairs where `services.gsc.configured === true`. Apply any `brand_overrides` from config — skip brands with `enabled: false`.
+
+Each entry provides:
+- `slug` — brand identifier
+- `name` — display name
+- `region.region` — region code
+- `region.domain` — public domain
+- `region.services.gsc.site_url` — GSC property URL (e.g. `https://www.example.com/` or `sc-domain:example.com`)
+
+**Fallback — no brands gateway:** if `brands_api_url` is not set in config, check for `GSC_PROPERTY_URLS` env var as a comma-separated list. Treat each as a single-brand property with no slug/name metadata.
+
+### Step 4: Fetch GSC data per brand
+
+Decode `gsc_service_account_json_b64` from base64 and write to a temp file. Use for all API calls; delete at end of run.
+
+For each brand/region, call the Google Search Console APIs:
+
+- **Index Coverage API** — pages with status `Excluded`, `Error`, or `Valid with warnings`. Limit 50.
+- **Search Analytics API** — clicks, impressions, CTR, position for last 7 days vs prior 7 days. Group by page.
+- **Core Web Vitals (CrUX)** — flag pages with `SLOW` LCP, FID, or CLS.
+
+### Step 5: Rank findings per brand by revenue impact
 
 Apply the 100m framework sequencing — technical errors first because they suppress rankings that conversion and content depend on:
 
 | Priority | Category | Reason |
 |---|---|---|
-| 1 | Indexing errors (`Crawled - currently not indexed`, `Discovered - currently not indexed`, server errors) | Active ranking suppression — pages that should rank but don't |
-| 2 | Core Web Vitals failures | Google ranking signal; also damages conversion |
-| 3 | Significant traffic drops (>15% impressions week-on-week) | Revenue signal — investigate before optimising |
-| 4 | Pages with high impressions but low CTR (<2%) | Quick-win title/meta fixes that improve existing rankings |
-| 5 | `Valid with warnings` (canonical issues, noindex on otherwise good pages) | Structural debt, lower urgency |
+| 1 | Indexing errors | Active ranking suppression |
+| 2 | Core Web Vitals failures | Ranking signal + conversion damage |
+| 3 | Traffic drops >15% week-on-week | Revenue signal |
+| 4 | High impressions, CTR <2% | Quick-win title/meta fixes |
+| 5 | `Valid with warnings` | Structural debt |
 
-Cap the findings list at 10. If there are more than 10, surface the highest-priority category in full and note how many lower-priority findings were omitted.
+Cap each brand at 10 findings. Note how many were omitted if more exist.
 
-### 4. Write the GBrain report
-
-Write a dated Markdown report to:
+### Step 6: Write per-brand reports
 
 ```
-/data/agent-stack/reports/gsc/YYYY-MM-DD.md
+/data/agent-stack/reports/gsc/<brand-slug>-<region>-YYYY-MM-DD.md
 ```
 
-Report structure:
+Include: summary sentence, findings tables for all 5 priority levels, property checked, data window.
 
-```markdown
-# GSC Health Check — YYYY-MM-DD
+### Step 7: Write cross-brand roll-up report
 
-## Summary
-<One sentence: overall health signal and most urgent finding>
-
-## Findings
-
-### Priority 1 — Indexing Errors
-<Table: URL | Error type | First detected | Recommended fix>
-
-### Priority 2 — Core Web Vitals
-<Table: URL | Metric | Status | Page type>
-
-### Priority 3 — Traffic Drops
-<Table: URL | Impressions (prior) | Impressions (current) | Delta %>
-
-### Priority 4 — Low CTR Opportunities
-<Table: URL | Impressions | CTR | Current title | Suggested improvement>
-
-### Priority 5 — Structural Warnings
-<Table: URL | Warning type | Recommended fix>
-
-## Properties Checked
-<List of GSC_PROPERTY_URLS checked>
-
-## Data Window
-Last 7 days vs prior 7 days
+```
+/data/agent-stack/reports/gsc/roll-up-YYYY-MM-DD.md
 ```
 
-If a section has no findings, write `None found.` and move on. Do not omit sections.
+Include: brand summary table (one row per brand/region with counts per priority), top 10 cross-brand findings ranked by impact, brands checked count.
 
-### 5. Create a Paperclip issue if findings exceed threshold
+### Step 8: Create Paperclip issue if findings exceed threshold
 
-If the total number of findings across all priorities is >= `GSC_ISSUE_THRESHOLD` (default 1):
+If total findings >= `issue_threshold`:
 
-Call `paperclip_create_issue` with:
-
-- **Title:** `Task: GSC health check — <date> — <N> findings across <M> properties`
-- **Body:** Top 5 findings from the ranked list, each with: URL, category, recommended fix, and expected impact. Link to the full GBrain report path.
+Call `paperclip_create_issue`:
+- **Title:** `Task: GSC health check — <date> — <N> findings across <M> brands`
+- **Body:** Top 5 cross-brand findings with brand, URL, category, recommended fix, expected impact. Link to roll-up report.
 - **Label:** `type:task`
 
-If `GSC_ISSUE_THRESHOLD` is set to `0`, always create an issue regardless of finding count.
+Honour per-brand `notify_channel` overrides when delivering the report response.
 
-### 6. Clean up
+### Step 9: Clean up
 
-Delete the temp credentials file. Confirm deletion before exiting.
+Delete the temp credentials file. Confirm deletion.
+
+## Re-running Setup
+
+If the operator wants to update the config (new brands gateway, rotated credentials, change brand overrides), they can say:
+
+> "Run gsc setup" or "Update my GSC config"
+
+The skill will ask the setup questions again and overwrite the existing config file.
 
 ## What This Skill Does Not Do
 
-- Does not make any changes to the sites being checked.
-- Does not submit URLs for re-indexing (read-only).
-- Does not access analytics platforms other than GSC.
-- Does not store credentials anywhere except the temp file deleted at end of run.
+- Does not make changes to any sites (read-only).
+- Does not submit URLs for re-indexing.
+- Does not store credentials outside `/data/agent-stack/config/gsc-health-check.json` and the run-scoped temp file.
+- Does not commit any org-specific data to the template.
 
-## Cron Setup (Operator Reference)
+## Cron Setup
 
-Run once to register the weekly schedule on a Hermes profile:
+Register weekly once setup is complete:
 
 ```bash
 hermes cron create "0 9 * * 1" "Weekly GSC health check" \
@@ -130,7 +171,7 @@ hermes cron create "0 9 * * 1" "Weekly GSC health check" \
   --deliver slack
 ```
 
-Trigger immediately to verify credentials and output before the first scheduled run:
+Trigger immediately after setup to verify:
 
 ```bash
 hermes cron run <job_id>
