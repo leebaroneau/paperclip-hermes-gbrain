@@ -17,6 +17,10 @@
 #                            by entrypoint.sh)
 #   AGENT_STATE_TOKEN      - fallback: GitHub token with push access, used only
 #                            when deploy keys are disabled for the repo/org
+#   AGENT_STATE_BRANCH     - branch to push snapshots to (default: agent-state).
+#                            MUST NOT be the branch Coolify deploys from — Coolify
+#                            auto-deploys on push to the deploy branch, so pushing
+#                            snapshots there creates a pre-deploy -> deploy loop.
 #
 # Returns 0 on success AND on graceful no-op (when env vars missing) so a
 # missing-config deployment doesn't block. Logs everything to stderr.
@@ -119,10 +123,21 @@ ASKPASS
     ${_REPOS_WORKTREES:+repos/worktrees} \
     2>/dev/null || true
 
-  # 4. Clone (or refresh) the state repo via the deploy key
-  log "Refreshing $workdir"
+  # 4. Clone (or refresh) the snapshot branch via the deploy key.
+  # Snapshots go to a DEDICATED branch (default: agent-state), never the branch
+  # Coolify deploys from — pushing snapshots to the deploy branch triggers an
+  # auto-deploy on every backup, which loops. The branch is an orphan snapshot
+  # tree (no code), created on first run if it doesn't exist yet.
+  local state_branch="${AGENT_STATE_BRANCH:-agent-state}"
+  log "Refreshing $workdir (snapshot branch: $state_branch)"
   rm -rf "$workdir"
-  "${git_auth_env[@]}" git clone -q --depth 50 "$git_auth_url" "$workdir"
+  if "${git_auth_env[@]}" git clone -q --depth 50 --single-branch --branch "$state_branch" "$git_auth_url" "$workdir" 2>/dev/null; then
+    log "  cloned existing snapshot branch $state_branch"
+  else
+    log "  snapshot branch $state_branch not found; creating it (orphan)"
+    "${git_auth_env[@]}" git clone -q --depth 1 "$git_auth_url" "$workdir"
+    ( cd "$workdir" && git checkout -q --orphan "$state_branch" && git rm -rfq . >/dev/null 2>&1 || true )
+  fi
 
   # 5. Stage the new snapshot
   local snapshot_dir="$workdir/$date"
@@ -144,8 +159,8 @@ ASKPASS
       -c user.email="pre-deploy@${brand}.agent" \
       commit -q -m "$commit_msg"
 
-  log "Pushing to $AGENT_STATE_REPO"
-  "${git_auth_env[@]}" git push -q origin HEAD:main
+  log "Pushing to $AGENT_STATE_REPO ($state_branch)"
+  "${git_auth_env[@]}" git push -q origin "HEAD:$state_branch"
 
   log "Done."
 }
