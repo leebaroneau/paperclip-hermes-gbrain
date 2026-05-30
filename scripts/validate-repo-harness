@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+
+
+def load_json(path):
+    try:
+        return json.loads(Path(path).read_text())
+    except Exception as exc:
+        raise SystemExit(f"{path}: invalid JSON: {exc}")
+
+
+def type_matches(expected, value):
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    return True
+
+
+def validate(schema, value, path="$"):
+    errors = []
+    expected_type = schema.get("type")
+    if expected_type and not type_matches(expected_type, value):
+        return [f"{path}: expected {expected_type}, got {type(value).__name__}"]
+
+    if "enum" in schema and value not in schema["enum"]:
+        errors.append(f"{path}: expected one of {schema['enum']}, got {value!r}")
+
+    if isinstance(value, str) and schema.get("minLength", 0) and len(value) < schema["minLength"]:
+        errors.append(f"{path}: must not be empty")
+
+    if isinstance(value, list):
+        if schema.get("minItems", 0) and len(value) < schema["minItems"]:
+            errors.append(f"{path}: expected at least {schema['minItems']} item(s)")
+        item_schema = schema.get("items")
+        if item_schema:
+            for index, item in enumerate(value):
+                errors.extend(validate(item_schema, item, f"{path}[{index}]"))
+
+    if isinstance(value, dict):
+        for key in schema.get("required", []):
+            if key not in value:
+                errors.append(f"{path}: missing required key {key!r}")
+        for key, child_schema in schema.get("properties", {}).items():
+            if key in value:
+                errors.extend(validate(child_schema, value[key], f"{path}.{key}"))
+
+    return errors
+
+
+def require_non_empty(data, dotted_path):
+    current = data
+    for part in dotted_path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return f"$.{dotted_path}: missing required value"
+        current = current[part]
+    if not isinstance(current, str) or not current.strip():
+        return f"$.{dotted_path}: must be filled before this harness is considered ready"
+    return None
+
+
+def archetype_rules(data, expected_archetype):
+    errors = []
+    actual = data.get("archetype")
+    if expected_archetype and actual != expected_archetype:
+        errors.append(f"$.archetype: expected {expected_archetype!r}, got {actual!r}")
+
+    required_by_archetype = {
+        "shopify-theme": ["platform.storeDomain"],
+        "shopify-hydrogen": ["platform.storeDomain", "platform.deployBranch"],
+        "shopify-app": ["platform.deployBranch"],
+        "coolify-service": ["platform.resourceUuid", "platform.primaryFqdn", "platform.deployBranch", "platform.buildPack"],
+    }
+    for dotted_path in required_by_archetype.get(actual, []):
+        error = require_non_empty(data, dotted_path)
+        if error:
+            errors.append(error)
+
+    return errors
+
+
+def main():
+    json_path = sys.argv[1] if len(sys.argv) > 1 else "repo.harness.json"
+    schema_path = sys.argv[2] if len(sys.argv) > 2 else "repo.harness.schema.json"
+    expected_archetype = sys.argv[3] if len(sys.argv) > 3 else None
+
+    data = load_json(json_path)
+    schema = load_json(schema_path)
+
+    errors = validate(schema, data)
+    errors.extend(archetype_rules(data, expected_archetype))
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        raise SystemExit(1)
+
+    print(f"{json_path}: valid")
+
+
+if __name__ == "__main__":
+    main()

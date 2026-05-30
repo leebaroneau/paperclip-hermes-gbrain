@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "archetype": "coolify-service",
+  "repository": {
+    "owner": "leebaroneau",
+    "name": "template-agent",
+    "description": "Brand-agnostic agent stack image (Paperclip + Hermes) consumed by per-brand agent-<brand> Coolify compose repos"
+  },
+  "platform": {
+    "name": "coolify",
+    "kind": "docker-compose-service",
+    "buildPack": "dockercompose",
+    "resourceUuid": "n/a — image publisher; consuming per-brand agent-<brand> apps each define their own resource",
+    "primaryFqdn": "n/a — image publisher; no own FQDN",
+    "deployBranch": "main",
+    "previewsEnabled": false,
+    "isDeployTemplate": true
+  },
+  "docs": {
+    "required": [
+      "AGENTS.md",
+      "MEMORY.md",
+      "DEPLOYMENT.md",
+      "docs/volumes.md",
+      "docs/pre-deploy-backup.md"
+    ]
+  },
+  "checks": [
+    {
+      "name": "doctor",
+      "command": "./scripts/doctor"
+    },
+    {
+      "name": "tests",
+      "command": "npm test"
+    },
+    {
+      "name": "compose-config",
+      "command": "docker compose --env-file .env.example config -q"
+    }
+  ],
+  "preview": {
+    "kind": "none",
+    "enabled": false,
+    "requiredBeforeMerge": false
+  }
+}

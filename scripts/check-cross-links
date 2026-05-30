@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Validate relative markdown links across in-repo docs.
+
+Scans every *.md (and *.md.jinja, treating jinja as md-ish) under the repo root, skipping
+common build/output dirs and the .ralph-log directory. For each [text](target) link whose
+target is a relative path (no scheme, not anchor-only), it resolves target against the
+source file's directory and asserts the target exists.
+
+Anchors are allowed; the fragment is stripped before existence check.
+Links inside fenced code blocks are skipped.
+
+Exit 0 if all links resolve, 1 otherwise.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+from pathlib import Path
+
+SKIP_DIRS = {".git", "node_modules", "dist", "build", ".next", ".vite", ".react-router",
+             ".ralph-log", ".copier-answers", ".venv", "venv"}
+LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+FENCE_RE = re.compile(r"^\s*```")
+
+
+def is_external(target: str) -> bool:
+    return bool(re.match(r"^(https?://|mailto:|tel:|ftp://|data:)", target))
+
+
+def is_anchor_only(target: str) -> bool:
+    return target.startswith("#")
+
+
+def iter_md_files(root: Path):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for name in filenames:
+            if name.endswith(".md") or name.endswith(".md.jinja"):
+                yield Path(dirpath) / name
+
+
+def check_file(path: Path, root: Path) -> list[str]:
+    errors: list[str] = []
+    in_fence = False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [f"{path.relative_to(root)}: not UTF-8"]
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for m in LINK_RE.finditer(line):
+            target = m.group(2).strip()
+            if not target:
+                continue
+            if is_external(target) or is_anchor_only(target):
+                continue
+            target = target.split("#", 1)[0]
+            if not target:
+                continue
+            resolved = (path.parent / target).resolve()
+            try:
+                resolved.relative_to(root.resolve())
+            except ValueError:
+                errors.append(
+                    f"{path.relative_to(root)}:{lineno}: link escapes repo root: {target}"
+                )
+                continue
+            if not resolved.exists():
+                errors.append(
+                    f"{path.relative_to(root)}:{lineno}: broken link → {target}"
+                )
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    root = Path(argv[1] if len(argv) > 1 else ".").resolve()
+    if not root.is_dir():
+        print(f"check-cross-links: not a directory: {root}", file=sys.stderr)
+        return 2
+    all_errors: list[str] = []
+    for md in iter_md_files(root):
+        all_errors.extend(check_file(md, root))
+    if all_errors:
+        for err in all_errors:
+            print(f"::error::cross-link: {err}", file=sys.stderr)
+        print(f"check-cross-links: {len(all_errors)} broken link(s)", file=sys.stderr)
+        return 1
+    print("check-cross-links: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

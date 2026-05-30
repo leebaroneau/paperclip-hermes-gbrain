@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.2.0-2-g87c2d15
+_src_path: /Users/leebaroneau/Documents/GitHub/template-harness
+archetype: coolify-service
+coolify_build_pack: dockercompose
+coolify_previews_enabled: true
+coolify_resource_uuid: ''
+deploy_branch: main
+description: Brand-agnostic agent stack image (Paperclip + Hermes) consumed by per-brand
+    agent-<brand> Coolify compose repos
+is_deploy_template: true
+org: leebaroneau
+primary_fqdn: ''
+repo_name: template-agent

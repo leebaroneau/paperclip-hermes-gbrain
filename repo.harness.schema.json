@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/leebaroneau/template-harness/repo.harness.schema.json",
+  "title": "template-harness repo contract",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "archetype", "repository", "platform", "docs", "checks", "preview"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "archetype": {
+      "type": "string",
+      "enum": ["shopify-theme", "shopify-hydrogen", "shopify-app", "coolify-service"]
+    },
+    "repository": {
+      "type": "object",
+      "required": ["owner", "name", "description"],
+      "properties": {
+        "owner": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "storeDomain": { "type": "string" },
+        "deployBranch": { "type": "string" },
+        "buildPack": { "type": "string", "enum": ["dockercompose", "dockerfile"] },
+        "resourceUuid": { "type": "string" },
+        "primaryFqdn": { "type": "string" },
+        "previewsEnabled": { "type": "boolean" },
+        "isDeployTemplate": { "type": "boolean" }
+      }
+    },
+    "runtime": {
+      "type": "object"
+    },
+    "docs": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "projectEntry": { "type": "string" }
+      }
+    },
+    "guards": {
+      "type": "object"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "command"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "command": { "type": "string", "minLength": 1 }
+        }
+      },
+      "minItems": 1
+    },
+    "preview": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "automated": { "type": "boolean" },
+        "requiredBeforeMerge": { "type": "boolean" },
+        "requiredBeforeDeploy": { "type": "boolean" }
+      }
+    }
+  }
+}
