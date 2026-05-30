@@ -65,6 +65,8 @@ save a sanitized note using the `memory` tool.
 
 Key: `inbox/100m-field-learning/<YYYY-MM-DD>-<company-or-profile-slug>-<short-topic>`
 
+Each page carries frontmatter `type: 100m-field-learning` and `framework: 100m`.
+
 Format:
 - Proposed Improvement (one paragraph)
 - Promotion Class: one of `clarity`, `example`, `pattern`, `strategic`
@@ -81,5 +83,7 @@ transcripts, or runtime database content.
 Same protocol as `$100M` field learnings. Key shape:
 
 `inbox/eos-field-learning/<YYYY-MM-DD>-<company-or-profile-slug>-<short-topic>`
+
+Each page carries frontmatter `type: eos-field-learning` and `framework: eos`.
 
 Never include client names, private metrics, or secrets.

@@ -1311,6 +1311,9 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
       patched[0].adapterConfig.env.HERMES_HOME,
       join(root, 'hermes/profiles/acme-inc-researcher'),
     );
+    // The trailing company/* entries mirror DEFAULT_COMPANY_SKILL_SLUGS in
+    // profile-sync.mjs (sourced from hermes-runtime/skills). Keep in sync if that
+    // list changes — CI runs this suite, so drift fails fast rather than silently.
     assert.deepEqual(
       patched[0].adapterConfig.paperclipSkillSync.desiredSkills,
       [
@@ -1318,9 +1321,27 @@ test('profile-sync CLI one-shot provisions homes and patches Paperclip API', asy
         'copywriting',
         'research',
         'company/use-100m-framework',
+        'company/using-paperclip',
+        'company/paperclip-org-structure',
+        'company/git-worktree',
+        'company/pipeline-workflow',
+        'company/claude-code',
+        'company/codex',
+        'company/shopify-theme',
+        'company/shopify-app',
       ],
     );
-    assert.deepEqual(createdSkills.map((skill) => skill.slug), ['use-100m-framework']);
+    assert.deepEqual(createdSkills.map((skill) => skill.slug), [
+      'use-100m-framework',
+      'using-paperclip',
+      'paperclip-org-structure',
+      'git-worktree',
+      'pipeline-workflow',
+      'claude-code',
+      'codex',
+      'shopify-theme',
+      'shopify-app',
+    ]);
     assert.match(createdSkills[0].markdown, /^---\nname: use-100m-framework/m);
     assert.equal(patched[0].adapterConfig.model, null);
     assert.equal(patched[0].adapterConfig.provider, null);

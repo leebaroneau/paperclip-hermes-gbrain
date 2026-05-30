@@ -2,36 +2,36 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-test('pull request image builds are manual and default to arm64 previews', async () => {
+test('image builds run on push to main and manual dispatch (no PR builds)', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
 
   assert.doesNotMatch(workflow, /^\s+pull_request:/m);
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /runs-on: \$\{\{ github\.ref == 'refs\/heads\/main' && 'ubuntu-latest' \|\| 'ubuntu-24\.04-arm' \}\}/);
-  assert.match(workflow, /platforms:[\s\S]*default: linux\/arm64/);
-  assert.match(workflow, /platforms="\$\{\{ inputs\.platforms \|\| 'linux\/arm64' \}\}"/);
-  assert.match(workflow, /github\.ref.*refs\/heads\/main[\s\S]*platforms="linux\/amd64,linux\/arm64"/);
-  assert.match(workflow, /docker\/setup-qemu-action@v4[\s\S]*platforms: all/);
+  assert.match(workflow, /push:\s*\n\s*branches:\s*\[main\]/);
+  assert.match(workflow, /runs-on: ubuntu-latest/);
 });
 
-test('workflow publishes the template-agent image package without hard-coded compose pulls', async () => {
+test('workflow publishes the template-agent image identity (no legacy gbrain name)', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
   const compose = await readFile('compose.yaml', 'utf8');
 
-  assert.match(workflow, /IMAGE_NAME: leebaroneau\/template-agent/);
+  assert.match(workflow, /REMOTE_IMAGE: ghcr\.io\/leebaroneau\/template-agent/);
   assert.doesNotMatch(workflow, /leebaroneau\/paperclip-hermes-gbrain/);
-  assert.doesNotMatch(compose, /ghcr\.io\/leebaroneau\/template-agent:latest/);
-  assert.doesNotMatch(compose, /ghcr\.io\/leebaroneau\/paperclip-hermes-gbrain:latest/);
+  // compose pins the published image via TEMPLATE_AGENT_IMAGE (default :latest).
+  assert.match(compose, /image:\s*\$\{TEMPLATE_AGENT_IMAGE:-ghcr\.io\/leebaroneau\/template-agent:latest\}/);
+  assert.doesNotMatch(compose, /ghcr\.io\/leebaroneau\/paperclip-hermes-gbrain/);
 });
 
-test('compose builds the agent stack from the repository while GHCR deploys are paused', async () => {
+test('compose.yaml is pull-only; the build override lives in compose.build.yaml', async () => {
   const compose = await readFile('compose.yaml', 'utf8');
+  const composeBuild = await readFile('compose.build.yaml', 'utf8');
 
-  assert.match(compose, /x-agent-stack-build:/);
-  assert.doesNotMatch(compose, /image:\s*template-agent:\$\{SOURCE_COMMIT:-local\}/);
-  assert.match(compose, /build:[\s\S]*context: \.[\s\S]*dockerfile: paperclip\/Dockerfile/);
-  assert.match(compose, /pull_policy:\s*build/);
-  assert.doesNotMatch(compose, /pull_policy:\s*always/);
+  // Production compose.yaml pulls the pinned image (durable pull-race fix) and
+  // carries NO build instructions — those live in the local-build overlay.
+  assert.doesNotMatch(compose, /build:/);
+  assert.match(compose, /pull_policy:\s*always/);
+  assert.match(composeBuild, /build:[\s\S]*context: \.[\s\S]*dockerfile: paperclip\/Dockerfile/);
+  assert.match(composeBuild, /pull_policy:\s*build/);
 });
 
 test('compose leaves proxy routing labels to Coolify', async () => {
@@ -41,12 +41,14 @@ test('compose leaves proxy routing labels to Coolify', async () => {
   assert.doesNotMatch(compose, /caddy_/);
 });
 
-test('multi-arch image publish has enough timeout and non-blocking cache export', async () => {
+test('build audits the image, then tags and pushes sha + latest', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
 
-  assert.match(workflow, /timeout-minutes: 90/);
-  assert.match(workflow, /cache-to: type=gha,mode=min,ignore-error=true/);
-  assert.doesNotMatch(workflow, /cache-to: type=gha,mode=max\s*$/m);
+  assert.match(workflow, /docker build -f paperclip\/Dockerfile -t "\$LOCAL_IMAGE" \./);
+  assert.match(workflow, /audit-blank-image\.sh "\$LOCAL_IMAGE"/);
+  assert.match(workflow, /docker tag "\$LOCAL_IMAGE" "\$REMOTE_IMAGE:sha-\$\{GITHUB_SHA\}"/);
+  assert.match(workflow, /docker tag "\$LOCAL_IMAGE" "\$REMOTE_IMAGE:latest"/);
+  assert.match(workflow, /docker push "\$REMOTE_IMAGE:sha-\$\{GITHUB_SHA\}"/);
 });
 
 test('production deploy webhooks only run from main branch image builds', async () => {
@@ -61,11 +63,10 @@ test('production deploy webhooks only run from main branch image builds', async 
   }
 });
 
-test('GHCR login retries transient registry timeouts', async () => {
+test('logs in to GHCR via docker/login-action', async () => {
   const workflow = await readFile('.github/workflows/build-image.yml', 'utf8');
 
-  assert.match(workflow, /name: Log in to GHCR/);
-  assert.match(workflow, /for attempt in 1 2 3;/);
-  assert.match(workflow, /docker login "\$REGISTRY" -u "\$GHCR_USERNAME" --password-stdin/);
-  assert.doesNotMatch(workflow, /docker\/login-action@v4/);
+  assert.match(workflow, /name: Log in to GitHub Container Registry/);
+  assert.match(workflow, /docker\/login-action@v3/);
+  assert.match(workflow, /registry: ghcr\.io/);
 });

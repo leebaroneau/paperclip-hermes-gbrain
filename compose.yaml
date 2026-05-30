@@ -1,9 +1,3 @@
-x-agent-stack-build: &agent-stack-build
-  pull_policy: build
-  build:
-    context: .
-    dockerfile: paperclip/Dockerfile
-
 services:
   paperclip:
     image: ${TEMPLATE_AGENT_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
@@ -19,13 +13,13 @@ services:
       # NOTE: PAPERCLIP_ALLOWED_HOSTNAMES is intentionally NOT set here.
       # Coolify injects app env vars into the container at runtime, but an
       # explicit `environment:` value with a non-empty substitution default
-      # OVERRIDES that injection. Neither ${PAPERCLIP_HOSTNAME} nor
-      # ${COOLIFY_FQDN} is available for compose-parse substitution (Coolify
-      # only injects COOLIFY_* / app vars at container runtime, not into the
-      # render .env), so any hardcoded value here resolves to its literal
-      # default and silently leaves the real public host un-allowlisted.
+      # OVERRIDES that injection. Neither ${PAPERCLIP_HOSTNAME} nor the
+      # Coolify-injected per-deployment FQDN var is available for compose-parse
+      # substitution (Coolify only injects its runtime vars into the container,
+      # not into the render .env), so any hardcoded value here resolves to its
+      # literal default and silently leaves the real public host un-allowlisted.
       # Set PAPERCLIP_ALLOWED_HOSTNAMES as a normal Coolify app env var
-      # (e.g. "paperclip.haverford.au,paperclip,localhost,127.0.0.1"); it then
+      # (e.g. "paperclip.example.com,paperclip,localhost,127.0.0.1"); it then
       # reaches the container via runtime injection. Local dev sets it in .env
       # (see .env.example) or relies on Paperclip's built-in localhost default.
       BETTER_AUTH_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
