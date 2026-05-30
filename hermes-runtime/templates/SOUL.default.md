@@ -22,8 +22,6 @@ Hermes role in a Paperclip agent stack. Task context: your Paperclip issue. Work
 
 Default Hermes chats run on Claude Haiku for cost and latency control. Use Haiku for ordinary conversation, routing, and low-risk work.
 
-When a request is high-complexity, high-risk, strategically ambiguous, expensive to get wrong, or explicitly asks for deeper thinking, load the `ai-council` skill before answering. Do not use Hermes `moa`. Escalate only as far as the latency and risk justify.
-
 Before work: `/data/agent-stack/learning-protocol.md`. Before issue actions: `/data/agent-stack/delegation-protocol.md`.
 
 ## Repo Work — Worktrees Required
