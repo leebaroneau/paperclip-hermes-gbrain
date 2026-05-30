@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Ralph loop runner — one task per iteration; loop until doctor passes.
+# See https://ghuntley.com/loop/ for the underlying pattern.
+#
+# Usage:
+#   ./scripts/ralph                          # read first plan in docs/exec-plans/active/
+#   ./scripts/ralph docs/exec-plans/active/<plan>.md
+#   RALPH_AGENT=codex MAX_ITER=5 ./scripts/ralph
+#
+# Stops on:
+#   - ./scripts/doctor exits 0 (acceptance met).
+#   - MAX_ITER iterations elapsed.
+#   - Ctrl-C from operator (early iterations expected to be steered manually).
+#
+# Env:
+#   RALPH_AGENT  Command that accepts a prompt on stdin and writes code (default: codex exec --auto).
+#   MAX_ITER     Hard ceiling on loop iterations (default: 10).
+
+set -euo pipefail
+
+PLAN_FILE="${1:-}"
+RALPH_AGENT="${RALPH_AGENT:-codex exec --auto}"
+MAX_ITER="${MAX_ITER:-10}"
+LOG_DIR="docs/exec-plans/active/.ralph-log"
+
+if [[ -z "$PLAN_FILE" ]]; then
+  PLAN_FILE=$(find docs/exec-plans/active -maxdepth 1 -name '*.md' -type f 2>/dev/null | head -n1 || true)
+fi
+if [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]]; then
+  echo "ralph: no active plan found. Create docs/exec-plans/active/<plan>.md first." >&2
+  exit 2
+fi
+
+mkdir -p "$LOG_DIR"
+echo "ralph: plan=$PLAN_FILE agent=\"$RALPH_AGENT\" max_iter=$MAX_ITER"
+
+iter=0
+while (( iter < MAX_ITER )); do
+  iter=$((iter + 1))
+  ts=$(date -u +%Y%m%dT%H%M%SZ)
+  log="$LOG_DIR/iter-${iter}-${ts}.log"
+  echo "ralph: iteration $iter ($(date -u +%H:%M:%SZ)) → $log"
+
+  prompt=$(cat <<EOF
+You are working in a Coolify-deployed backend service repository.
+Read AGENTS.md, MEMORY.md, repo.harness.json, DEPLOYMENT.md before making changes.
+
+TASK SPEC:
+$(cat "$PLAN_FILE")
+
+Constraints:
+- Change as little as possible. Do not refactor outside scope.
+- After each edit, run \`./scripts/doctor\` locally before declaring done.
+- If a fact is missing in the repo, write it into docs/ rather than guessing.
+
+When done, summarize what changed and which acceptance criteria are now met.
+EOF
+)
+
+  if ! echo "$prompt" | $RALPH_AGENT 2>&1 | tee "$log"; then
+    echo "ralph: agent invocation failed on iteration $iter" >&2
+  fi
+
+  echo "ralph: running doctor after iteration $iter"
+  if ./scripts/doctor; then
+    echo "ralph: acceptance met on iteration $iter"
+    exit 0
+  fi
+
+  echo "ralph: doctor failed on iteration $iter — continuing"
+done
+
+echo "ralph: max iterations ($MAX_ITER) reached without acceptance" >&2
+exit 1

@@ -1,24 +1,68 @@
-# AGENTS.md
+# template-agent — Agent Harness (Coolify backend service)
 
-This repo is a blank Coolify deploy template for Paperclip and Hermes Agent.
+Brand-agnostic agent stack image (Paperclip + Hermes) consumed by per-brand agent-<brand> Coolify compose repos
 
-Keep it client-neutral. Do not commit Paperclip instances, Hermes runtime profiles, API keys, client names, client domains, or Coolify deployment-specific values.
+## Project overview
 
-Do not add CI workflow steps that target a specific brand's deployment (Coolify API calls, brand webhooks, brand-specific secrets). Brands consume the published `:latest` tag and trigger their own deploys.
+Steer-before-you-act layer. The repo is the source of truth; the Coolify UI is NOT visible to an
+agent. If config only exists in Coolify, mirror it into `DEPLOYMENT.md`.
 
-When changing the template, run:
+This is a multi-brand deploy template / IMAGE PUBLISHER. Keep it CLIENT-NEUTRAL. Never commit API
+keys, client names, client domains, runtime profiles, Coolify UUIDs, or any per-deployment value.
+Brands consume the published image tag (`:latest` or a pinned `:sha-<commit>`) and trigger their
+OWN deploys. Do NOT add CI steps that target a specific brand (Coolify API calls, brand webhooks,
+brand secrets).
+
+## Build and test commands
 
 ```bash
-npm test
-docker compose --env-file .env.example config --services
-```
+npm test                                             # template test suite (node --test + shell checks; no image build)
+docker compose --env-file .env.example config -q     # compose valid against the documented contract
+./scripts/doctor                                     # full local gate (run before pushing) — wraps the above
 
-When changing the image build, also run:
-
-```bash
+# When changing the image build:
 docker compose -f compose.yaml -f compose.build.yaml --env-file .env.example build
-./scripts/audit-blank-image.sh template-agent:local
+./scripts/audit-blank-image.sh template-agent:local  # assert the image is client-neutral
+
+./scripts/ralph                                      # autonomous loop runner (reads docs/exec-plans/active/)
 ```
+
+## Code style guidelines
+
+- `compose.yaml` is the source of truth. Coolify (in consuming repos) RE-FETCHES it from git on every deploy; direct UI edits to `docker_compose_raw` are WIPED.
+- For Coolify-injected label vars use bare `${COOLIFY_FQDN}` / `${COOLIFY_CONTAINER_NAME}` — NOT `${VAR:-default}` (leaks literal into Traefik labels, breaks routing). Ordinary app env may use `${VAR:-}`.
+- Multi-service: route secondary services via the app's `docker_compose_domains` map, not `SERVICE_FQDN_*` env.
+- Never DEFINE Traefik router labels yourself — let Coolify generate production routing.
+- `repo.harness.json` is the machine-readable repo contract. Update it when branch, runtime, or check assumptions change.
+
+## Testing instructions
+
+- `./scripts/doctor` is the hard gate. Wraps the template test suite, compose-contract validation,
+  Coolify routing/healthcheck guardrails, `repo.harness.json` schema validation, and cross-link
+  validation across `docs/`. It does NOT build the full agent-stack image — that is owned by
+  `.github/workflows/build-image.yml` on merge to `main`.
+- This repo has no Coolify preview deploy of its own (it publishes an image). Validate changes via
+  `./scripts/doctor` + the local stack (`scripts/local-up.sh`).
+
+## Security considerations
+
+- `.env` is never committed; `.env.example` documents the runtime contract. Real values live per-brand in Coolify.
+- NEVER reshape the `volumes:` block without a backup first — that has wiped prod data before. The pre-deploy backup (`docs/pre-deploy-backup.md`) is the safety net.
+- Never DELETE a consuming app with `docker_cleanup=true` (sweeps adjacent containers sharing volume names).
+- `docker exec` against the running stack that touches `/data` must use `-u hermes` (root writes break later hermes-user writes).
+
+## Commit and PR format
+
+- Issue → branch → PR (Pipeline Core). Branch prefix matches issue type (`bug|story|task|spike|experiment|epic`). PR body includes `Fixes #<issue>`.
+- Push to `main` builds + publishes the image (`:latest` + `:sha-<commit>`). Consuming brands self-deploy; do NOT add brand deploy triggers here.
+
+## Development environment
+
+- FQDN: n/a — image publisher, no own FQDN
+- Coolify resource UUID: n/a — no own Coolify app; each consuming `agent-<brand>` repo defines its own
+- Deploy branch: `main`
+- Org: leebaroneau
+- Build pack (consuming repos): Docker Compose
 
 ## Runtime Operations (for agents debugging or configuring a live deployment)
 
@@ -60,6 +104,17 @@ The compose builds this value automatically as `paperclip,localhost,127.0.0.1,<P
 ### Do NOT override `PAPERCLIP_API_BASE` for the hermes service in Coolify
 
 The default (`http://paperclip:3100`) is the correct Docker Compose internal address. Overriding it to the public URL adds an unnecessary TLS hop and is only needed if Paperclip and Hermes are on separate hosts.
+
+## Knowledge map (where to look)
+
+- `DEPLOYMENT.md` — image-publish model, env contract, volumes, pre-deploy backup, gotchas, rollback.
+- `docs/volumes.md` — data inventory + backup/restore for the shared `/data` volume.
+- `docs/pre-deploy-backup.md` — protect `/data` from deploy-time volume wipes.
+- `docs/exec-plans/active/` — in-flight plans driving current work.
+- `docs/exec-plans/tech-debt-tracker.md` — accumulated debt with severity.
+- `skills/` — repo-local skills (review, verify, deploy) invokable by any agent.
+
+See also: `MEMORY.md` (gotchas), `CLAUDE.md` (→ this file).
 
 <!-- pipeline-core-agent-instructions:start -->
 ## Pipeline Core Repo Ownership

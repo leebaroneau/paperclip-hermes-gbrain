@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# template-agent harness doctor (adapted from template-harness coolify-service).
+#
+# template-agent is an IMAGE PUBLISHER: it builds ghcr.io/leebaroneau/template-agent
+# (consumed by per-brand agent-<brand> Coolify compose repos) rather than deploying
+# itself. So this doctor is deliberately LIGHTWEIGHT — it runs the existing test
+# suite + validates the compose contract, but does NOT build the full multi-stage
+# agent-stack image. That heavy build is owned by .github/workflows/build-image.yml
+# on merge to main, not re-run on every PR.
+
+failures=0
+
+fail() {
+  echo "::error::$1" >&2
+  failures=$((failures + 1))
+}
+
+require_file() {
+  [[ -f "$1" ]] || fail "Missing required file: $1"
+}
+
+require_one_file() {
+  local found=0
+  for file in "$@"; do
+    [[ -f "$file" ]] && found=1
+  done
+  (( found == 1 )) || fail "Missing one of: $*"
+}
+
+check_no_placeholders() {
+  local file
+  for file in "$@"; do
+    if [[ ! -f "$file" ]]; then
+      continue
+    fi
+    if grep -En '\bTODO\b|\bTBD\b|\bFIXME\b|_None_' "$file"; then
+      fail "$file contains unresolved placeholders."
+    fi
+  done
+}
+
+require_file "AGENTS.md"
+require_file "repo.harness.json"
+require_file "repo.harness.schema.json"
+require_file "scripts/validate-repo-harness"
+require_file "scripts/ralph"
+require_file "scripts/check-cross-links"
+require_file ".env.example"
+require_file "DEPLOYMENT.md"
+require_file "docs/volumes.md"
+require_file "docs/pre-deploy-backup.md"
+require_file "docs/exec-plans/README.md"
+require_file "docs/exec-plans/tech-debt-tracker.md"
+require_file "skills/README.md"
+python3 scripts/validate-repo-harness repo.harness.json repo.harness.schema.json coolify-service
+python3 scripts/check-cross-links .
+check_no_placeholders AGENTS.md DEPLOYMENT.md docs/volumes.md docs/pre-deploy-backup.md
+
+
+require_one_file "compose.yaml" "docker-compose.yml" "docker-compose.yaml"
+
+compose_file=""
+for candidate in compose.yaml docker-compose.yml docker-compose.yaml; do
+  if [[ -f "$candidate" ]]; then
+    compose_file="$candidate"
+    break
+  fi
+done
+
+if grep -R "traefik.http.routers\\." "$compose_file" >/dev/null 2>&1; then
+  fail "$compose_file defines Traefik router labels; let Coolify generate production routing."
+fi
+
+if grep -R '\${COOLIFY_[A-Z0-9_]*:-' "$compose_file" >/dev/null 2>&1; then
+  fail "$compose_file uses default syntax with COOLIFY_* variables; use bare \${COOLIFY_*} in labels."
+fi
+
+if ! grep -R "healthcheck:" "$compose_file" >/dev/null 2>&1; then
+  fail "$compose_file has no healthcheck; traffic-receiving services need one."
+fi
+
+# Contract validation only — parse the compose against the documented .env.example.
+# No `docker compose build`: the agent-stack image build is owned by build-image.yml.
+docker compose --env-file .env.example config -q
+
+# Existing template test suite (node --test + shell template checks; no image build).
+npm test
+
+
+if (( failures > 0 )); then
+  echo "doctor failed with $failures issue(s)" >&2
+  exit 1
+fi
+
+echo "doctor passed"
