@@ -6,13 +6,10 @@ This repo is intentionally client-neutral. It should contain the deploy recipe o
 
 ## ⚠️ For Agents (Claude, Codex, any LLM editing this repo) — Read First
 
-This is a **template deployed to multiple companies simultaneously** from source.
-
-| Deploy | Coolify host | Watches |
-| --- | --- | --- |
-| **ALX Finance** | `https://coolify.alxfinance.com.au` | `ALX-Finance/template-agent` @ `main` |
-| **Leebarone** | `https://coolify.leebarone.dev` | `leebaroneau/template-agent` @ `main` |
-| **Genvest** | `http://209.38.27.69:8000` | `leebaroneau/template-agent` @ `main` |
+This is a **template deployed to multiple companies simultaneously** from source. Several
+Coolify instances (one per brand) watch this repo's `main` branch and each run their own
+`agent-<brand>` app, so a push to `main` can redeploy all of them at once. Brand-specific
+Coolify hosts, app UUIDs, and domains live in each brand's own deployment — never in this repo.
 
 Production Coolify deploys should pull a prebuilt image from GitHub Container Registry. GitHub Actions builds and audits the image first, then publishes immutable tags such as `ghcr.io/leebaroneau/template-agent:sha-<commit>`. Local development still builds from source by adding `compose.build.yaml`.
 
@@ -408,7 +405,7 @@ A healthy server replies with `serverInfo: {"name":"paperclip","version":"0.1.0"
 
 When you (or an upstream update) add a new MCP server to `hermes-runtime/templates/config.yaml`, the `bootstrap-profiles.sh` entrypoint script idempotently merges any *missing* `mcp_servers.*` entries into every profile config on the next container start — both `HERMES_PROFILES`-listed profiles and per-role profiles that `profile-sync.mjs` creates from Paperclip runtime identity metadata under `/data/instances/default/runtimes/hermes/profiles/` (falling back to `/data/hermes/profiles/` for older Paperclip builds). Existing entries are never overwritten, so per-profile customisations are preserved. New servers added to the template propagate to every Hermes profile automatically without a manual patch.
 
-**Brand overlays.** Brand wrappers (e.g. `agent-genvest`) can contribute additional `mcp_servers` entries without modifying or forking this image. Drop YAML files into `/opt/hermes-runtime/templates/overlays/*.yaml` — typically via Docker Compose `configs:` mounts on both the `paperclip` and `hermes` services — and `bootstrap-profiles.sh` merges each file's `mcp_servers.*` into the effective template before merging that into each profile. The merge is strictly additive at both layers: the canonical `config.yaml` wins over any overlay on key collision, and existing profile entries always win over the effective template. Among overlays, alphabetic-first filename wins on collision.
+**Brand overlays.** Brand wrappers (e.g. an `agent-<brand>` deploy repo) can contribute additional `mcp_servers` entries without modifying or forking this image. Drop YAML files into `/opt/hermes-runtime/templates/overlays/*.yaml` — typically via Docker Compose `configs:` mounts on both the `paperclip` and `hermes` services — and `bootstrap-profiles.sh` merges each file's `mcp_servers.*` into the effective template before merging that into each profile. The merge is strictly additive at both layers: the canonical `config.yaml` wins over any overlay on key collision, and existing profile entries always win over the effective template. Among overlays, alphabetic-first filename wins on collision.
 
 Overlay errors (malformed YAML, missing `mcp_servers` key, non-dict `mcp_servers` value) emit a single stderr warning and skip that overlay — bootstrap never crashes because of overlay errors. See `hermes-runtime/templates/overlays/README.md` (shipped in the image) for the contract a brand overlay file must follow.
 
@@ -670,7 +667,7 @@ Restic is not yet bundled in the image. Either:
 
 ### Alternative: bind-mount + host backup
 
-If your Coolify host already has a backup tool (rclone, tarsnap, Time Machine, etc.) covering a host directory, you can convert `paperclip-data` from a named Docker volume to a bind mount of a directory on the host. Any backup of that host directory now captures the agent stack state without a per-container step. This is how `leebarone.dev` is configured — the volume is bind-backed to `~/Documents/GitHub/lee-dashboard/leebarone/hermes/` and rides on the user's Mac-level backup.
+If your Coolify host already has a backup tool (rclone, tarsnap, Time Machine, etc.) covering a host directory, you can convert `paperclip-data` from a named Docker volume to a bind mount of a directory on the host. Any backup of that host directory now captures the agent stack state without a per-container step. This suits a single-host deployment whose host directory is already covered by an external/OS-level backup.
 
 ## Scripts
 
