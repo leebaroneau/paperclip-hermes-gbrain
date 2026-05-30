@@ -43,5 +43,7 @@ test('delegation protocol teaches managed profiles when to use ai-council', asyn
   assert.match(md, /## 7\. Cognitive Expansion Engine/);
   assert.match(md, /Use the `ai-council` skill/);
   assert.match(md, /Do not use Hermes `moa`/);
-  assert.match(md, /## 8\. Runtime Self-Management Boundaries/);
+  // NB: "Runtime Self-Management Boundaries" was removed on purpose in #97
+  // ("remove Runtime Self-Management Boundaries guardrail entirely"); do not
+  // re-assert it here.
 });

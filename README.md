@@ -53,39 +53,23 @@ The Paperclip MCP server (see below) closes the loop: Hermes-side agents can fil
 - `hermes` bootstraps Hermes profiles and starts configured gateways. It only runs the dashboard on port `9119` when `HERMES_DASHBOARD_ENABLED=1`.
 - Both services share the `paperclip-data` volume at `/data`.
 
-## Image Tags and Preview Deployments
+## Image Tags and Deployment
 
-`compose.yaml` currently builds the Paperclip/Hermes stack directly from the checked-out repository and lets Compose/Coolify tag each service locally. This keeps PR previews testable while GHCR publishing is paused.
+`compose.yaml` pulls the published image (`${TEMPLATE_AGENT_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}`). `compose.build.yaml` is the local-build overlay that builds the stack from this repo:
 
-The GitHub image workflow can still publish production images when re-enabled. Preview images are manual so normal pull requests stay fast:
+```bash
+docker compose -f compose.yaml -f compose.build.yaml --env-file .env.example build
+```
+
+On push to `main` (or manual `workflow_dispatch`), `.github/workflows/build-image.yml` builds `paperclip/Dockerfile`, audits it for client-neutrality, then tags and pushes to `ghcr.io/leebaroneau/template-agent`:
 
 | Event | Tags |
 |---|---|
-| Push or manual dispatch on `main` | `latest`, `paperclip-<version>`, `sha-<commit>` |
+| Push or manual dispatch on `main` | `latest` + `sha-<commit>` |
 | Manual dispatch on a non-`main` branch | `sha-<commit>` |
-| Pull request | No image is published automatically |
+| Pull request | No image is published |
 
-The workflow publishes to `ghcr.io/leebaroneau/template-agent`, matching the GitHub repository name. To return deployments to registry pulls later, restore the compose image reference and `pull_policy` alongside the workflow.
-
-Main branch image builds always publish the full multi-arch `linux/amd64,linux/arm64` image on GitHub's standard x64 Ubuntu runner. Manual branch builds default to `linux/arm64` and run on GitHub's native `ubuntu-24.04-arm` runner for local Coolify previews on Colima. Choose `linux/amd64,linux/arm64` manually only when a branch preview needs production parity.
-
-To publish a preview image for a branch, dispatch the workflow against that branch:
-
-```bash
-gh workflow run build-image.yml --ref <branch> -f platforms=linux/arm64
-```
-
-For registry-backed Coolify preview deployments, prefer the commit tag so one generic preview variable works for every PR:
-
-```dotenv
-AGENT_STACK_IMAGE=ghcr.io/leebaroneau/template-agent:sha-$SOURCE_COMMIT
-```
-
-Set that as a **Preview Deployment Environment Variable** in Coolify with variable interpolation enabled (do not mark it literal) only after registry-backed previews are turned back on. Coolify provides `SOURCE_COMMIT` for each deployment, so PR #17 and PR #18 pull their own image without manually changing `AGENT_STACK_IMAGE`. If a PR gets new commits, dispatch the image workflow again before redeploying that preview.
-
-Paperclip adopts Coolify's preview `SERVICE_URL_PAPERCLIP` and `SERVICE_FQDN_PAPERCLIP` at container start for PR previews, so preview hostnames are added to `PAPERCLIP_ALLOWED_HOSTNAMES` automatically. For Cloudflare Universal SSL, use one-label preview hostnames like `paperclip-pr-17.example.com`; nested names like `17.paperclip.example.com` usually require an additional wildcard certificate.
-
-Do not use a shared tag like `:pr` unless you intentionally only ever run one PR preview at a time. A single shared PR tag would be overwritten by whichever branch built last.
+After publishing, the workflow fires each configured brand's Coolify deploy webhook (gated on `main` + that brand's `COOLIFY_*_APP_UUID` repo var). Consuming `agent-<brand>` repos either pin `TEMPLATE_AGENT_IMAGE` to a `sha-<commit>` (manual roll-forward, deterministic rollback) or track `:latest` (auto-advance on each build). See `DEPLOYMENT.md` for the full model.
 
 ## Paperclip Version
 
@@ -450,7 +434,7 @@ The `paperclip` container's entrypoint runs three small Node patches against the
 
 | Patch | What it changes |
 |---|---|
-| `patch-hermes-adapter-env.mjs` | Unwrap Paperclip's env-binding objects when passing to the Hermes child process. Without this, `HERMES_HOME`, `GBRAIN_HOME`, and `PAPERCLIP_API_URL` reach Hermes as objects instead of strings. |
+| `patch-hermes-adapter-env.mjs` | Unwrap Paperclip's env-binding objects when passing to the Hermes child process. Without this, `HERMES_HOME` and `PAPERCLIP_API_URL` reach Hermes as objects instead of strings. |
 | `patch-hermes-adapter-skills-home.mjs` | Rewrite `hermes-paperclip-adapter`'s `listSkills` so it scans `<HERMES_HOME>/skills/` (instead of always `$HOME/.hermes/skills/`) and follows symlinks at both the category and item levels. Without this, every per-role profile that profile-sync creates reports 0 skills in Paperclip's UI/API even though Hermes itself loads them fine. |
 | `patch-paperclip-company-prefix.mjs` | Relax Paperclip's company URL-key prefix constraints to allow the slugs the agent stack uses. |
 

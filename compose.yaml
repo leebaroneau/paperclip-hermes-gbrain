@@ -1,9 +1,3 @@
-x-agent-stack-build: &agent-stack-build
-  pull_policy: build
-  build:
-    context: .
-    dockerfile: paperclip/Dockerfile
-
 services:
   paperclip:
     image: ${TEMPLATE_AGENT_IMAGE:-ghcr.io/leebaroneau/template-agent:latest}
